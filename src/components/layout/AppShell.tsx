@@ -29,7 +29,9 @@ export function AppShell() {
         </div>
       )}
 
-      <div className="mx-auto flex w-full max-w-7xl flex-col gap-6 px-4 py-6 lg:flex-row lg:gap-8">
+      {/* Widened on very large screens so the eight dashboard tiles fit in one
+          row at 1920px without crowding. */}
+      <div className="mx-auto flex w-full max-w-7xl flex-col gap-6 px-4 py-6 lg:flex-row lg:gap-8 2xl:max-w-[110rem]">
         <header className="lg:w-56 lg:shrink-0">
           <div className="flex items-center justify-between gap-3">
             <div>

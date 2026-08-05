@@ -18,8 +18,8 @@ export function ScreenshotInboxPage() {
       />
 
       <PhaseNotice
-        phase="Phase 1"
-        summary={`Extraction provider: ${provider.info.displayName}. Nothing is read from images yet.`}
+        phase="Coming in Phase 4"
+        summary={`Extraction provider: ${provider.info.displayName}. Nothing is read from images yet — add customers by hand from the Customers page in the meantime.`}
         planned={[
           'Paste or drag a screenshot straight from the CRM tab',
           'Free in-browser OCR with Tesseract.js, so images never leave the device',

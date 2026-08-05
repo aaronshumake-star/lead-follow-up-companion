@@ -7,9 +7,9 @@ import { defaultProviderRegistry } from '../../providers/registry.ts'
 import { formatRelative } from '../../lib/format.ts'
 
 /**
- * WhatsApp is a core capability, so this page exists from Phase 1 to make its
- * state and its cost visible: which provider is wired up, which number is
- * approved, and how many billable messages the month has used.
+ * WhatsApp is a core capability, so this page exists ahead of the integration to
+ * make its state and its cost visible: which provider is wired up, which number
+ * is approved, and how many billable messages the month has used.
  */
 export function WhatsAppPage() {
   const provider = defaultProviderRegistry.whatsapp
@@ -34,8 +34,8 @@ export function WhatsAppPage() {
       </div>
 
       <PhaseNotice
-        phase="Phase 1"
-        summary="The provider interface is in place; no messages are sent and no webhook is live."
+        phase="Coming in Phase 3"
+        summary="The provider interface is in place; no messages are sent and no webhook is live. The dashboard is the working surface until then."
         planned={[
           'WhatsApp Business Platform Cloud API behind the existing provider interface',
           'Follow-up reminders, a morning summary and an overdue summary',

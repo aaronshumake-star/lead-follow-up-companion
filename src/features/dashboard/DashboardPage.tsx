@@ -45,27 +45,47 @@ export function DashboardPage() {
         }
       />
 
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 xl:grid-cols-8">
+      {/* Eight across on a desktop viewport, folding to four and then two so
+          nothing ever needs horizontal scrolling. */}
+      <div
+        aria-label="Queue summary"
+        className="grid grid-cols-2 gap-3 sm:grid-cols-4 2xl:grid-cols-8"
+      >
         <StatTile
-          label="Action required"
+          label="Action Required Now"
           value={counts.actionRequired}
           tone={counts.actionRequired > 0 ? 'alert' : 'good'}
           hint="Overdue or due within 2 hours"
         />
-        <StatTile label="Overdue" value={counts.overdue} tone={counts.overdue > 0 ? 'warn' : 'good'} />
-        <StatTile label="Due today" value={counts.dueToday} />
-        <StatTile label="Due tomorrow" value={counts.dueTomorrow} />
-        <StatTile label="Waiting" value={counts.waitingForCustomer} hint="For the customer" />
         <StatTile
-          label="No next action"
+          label="Overdue"
+          value={counts.overdue}
+          tone={counts.overdue > 0 ? 'warn' : 'good'}
+          hint="Past due, still open"
+        />
+        <StatTile label="Due Today" value={counts.dueToday} hint="Still ahead of you today" />
+        <StatTile label="Due Tomorrow" value={counts.dueTomorrow} hint="Tomorrow's commitments" />
+        <StatTile
+          label="Waiting for Customer"
+          value={counts.waitingForCustomer}
+          hint="Each with a deadline"
+        />
+        <StatTile
+          label="No Next Action"
           value={counts.noNextAction}
           tone={counts.noNextAction > 0 ? 'alert' : 'good'}
+          hint="Active, nothing scheduled"
         />
-        <StatTile label="Appointments" value={counts.upcomingAppointments} hint="Upcoming" />
         <StatTile
-          label="Needs review"
+          label="Upcoming Appointments"
+          value={counts.upcomingAppointments}
+          hint="Booked and ahead"
+        />
+        <StatTile
+          label="Needs Review"
           value={counts.needsReview}
           tone={counts.needsReview > 0 ? 'warn' : 'good'}
+          hint="Unworked or uncovered"
         />
       </div>
 

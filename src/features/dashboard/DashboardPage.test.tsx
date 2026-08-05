@@ -50,6 +50,26 @@ describe('DashboardPage', () => {
     expect(overdue.getByText('Priya Raghunathan')).toBeInTheDocument()
   })
 
+  it('shows all eight summary tiles', async () => {
+    renderWithProviders(<DashboardPage />)
+    await waitForWorkspace()
+
+    const summary = screen.getByLabelText('Queue summary')
+
+    for (const label of [
+      'Action Required Now',
+      'Overdue',
+      'Due Today',
+      'Due Tomorrow',
+      'Waiting for Customer',
+      'No Next Action',
+      'Upcoming Appointments',
+      'Needs Review',
+    ]) {
+      expect(within(summary).getByText(label)).toBeInTheDocument()
+    }
+  })
+
   it('lists every required queue', async () => {
     renderWithProviders(<DashboardPage />)
     await waitForWorkspace()

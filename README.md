@@ -22,30 +22,37 @@ Every active customer must be in one of these states:
 An active customer in none of those states appears at the top of the dashboard
 in the **No next action** queue. That queue is the product.
 
-## Status: Phase 1
+## Status: Phase 2
 
-Phase 1 is the foundation — schema, security, application shell and the
-interfaces the rest of the system plugs into. The features themselves come next.
+The manual lead tracker is complete and usable, in demo mode and against
+Supabase, before screenshot OCR or WhatsApp exist.
 
 **Built:**
 
 - React 19 + TypeScript + Vite + Tailwind CSS 4, installable as a PWA
 - Supabase authentication with protected routes
-- Complete database schema: 12 tables, 3 views, Row Level Security on every
-  user-owned table
-- Placeholder pages for Dashboard, Customers, Follow-Ups, Screenshot Inbox,
-  WhatsApp and Settings
-- Provider interfaces for screenshot extraction, WhatsApp messaging, voice
-  transcription and command parsing, each with a placeholder that fails closed
-- Normalization utilities shared with the database, fictional seed data, and
-  78 unit tests plus 4 end-to-end tests plus 14 database assertions
+- Database schema: 12 tables, 3 views, Row Level Security on every user-owned
+  table, plus transactional follow-up functions
+- **Dashboard** with eight queues: action required now, overdue, due today, due
+  tomorrow, waiting for customer, no next action, upcoming appointments and
+  recently added
+- **Customers**: create, edit, archive, restore, delete, search across nine
+  fields, nine filters, and conservative duplicate warnings that never merge
+- **Customer detail**: contact coverage, activity timeline with corrections and
+  an audit trail, follow-up history, vehicle interests, structured notes
+- **Activities**: fifteen types, eleven outcomes, quick actions that log and
+  schedule in one click
+- **Follow-up engine**: presets, per-outcome defaults, and transactional
+  replacement that never discards the previous commitment
+- **Waiting for customer** with an enforced response deadline
+- **Settings** stored per user: time zone, morning and afternoon times, and a
+  follow-up interval for each outcome
+- 165 unit tests, 26 database assertions, 14 Playwright tests
 
-**Deliberately not built yet:** the editable lead tracker, real screenshot
-extraction, a live WhatsApp connection, voice transcription.
-
-The dashboard queue logic is real, though — `resolveNextAction` and
-`summarizeContactMethods` are the functions the live version will use, and they
-mirror the corresponding SQL views.
+**Deliberately not built yet:** screenshot extraction, a live WhatsApp
+connection, voice transcription, and the background scheduler. Waiting deadlines
+are evaluated whenever the workspace loads instead; Phase 3 will call the same
+function from a schedule.
 
 ---
 
@@ -74,9 +81,17 @@ npm run dev
 Open http://localhost:5173.
 
 **With no configuration at all, the app boots in demo mode** against fictional
-fixtures. You can click through every page, see the no-next-action queue, and
-check the provider status before creating a Supabase project. Demo mode is on
-whenever `VITE_SUPABASE_URL` is empty, and an amber banner says so.
+fixtures, and the whole tracker works: create customers, log activities,
+schedule and complete follow-ups, mark someone waiting, search and filter.
+
+Demo records are stored in this browser's localStorage only. They are never
+synchronized, never sent anywhere, and never mixed with Supabase records — the
+two backends are selected exclusively. An amber banner says so on every page,
+and Settings has a **Reset demo data** button that reloads the original
+fixtures.
+
+Demo mode is on whenever `VITE_SUPABASE_URL` is empty, or when
+`VITE_DEMO_MODE=true`.
 
 ### 3. Connect your own Supabase project
 
@@ -169,6 +184,8 @@ filename order:
    fields, inbound commands, match candidates, notification log, audit log
 4. `20260805000400_row_level_security.sql` — RLS policies and grants
 5. `20260805000500_views.sql` — the derived read models
+6. `20260806000100_phase2_manual_tracker.sql` — Phase 2 columns, per-user
+   scheduling settings, and the transactional follow-up functions
 
 ### 4. Create your user account
 
@@ -268,7 +285,17 @@ src/
 ├── config/env.ts            Validated client configuration
 ├── domain/                  Vocabulary, models, and the rules
 │   ├── next-action.ts       The no-next-action rule
-│   └── contact-methods.ts   Available vs. attempted-by-me accounting
+│   ├── contact-methods.ts   Available vs. attempted-by-me accounting
+│   ├── dashboard.ts         The eight queues, built in one pass
+│   ├── duplicates.ts        Conservative matching that never merges
+│   ├── follow-up-presets.ts Presets and per-outcome defaults
+│   ├── customer-filters.ts  Search and filtering
+│   └── settings.ts          Per-user scheduling preferences
+├── data/                    Storage, behind one interface
+│   ├── workspace.ts         The repository contract
+│   ├── demo/                Browser-local records for demo mode
+│   ├── supabase/            Live records, through RLS
+│   └── WorkspaceProvider    Loads the working set, refreshes after changes
 ├── providers/               Swappable external services
 │   ├── screenshot-extraction/
 │   ├── whatsapp/
@@ -277,11 +304,14 @@ src/
 │   └── registry.ts          The one file that picks implementations
 ├── features/                One folder per page, plus auth
 ├── components/              Layout and small UI pieces
-├── lib/                     Normalization, untrusted text, formatting, Supabase
-└── data/fixtures.ts         Fictional data mirroring supabase/seed.sql
+└── lib/                     Normalization, untrusted text, time zones, Supabase
 ```
 
-Three ideas hold it together.
+Demo mode and Supabase implement the same `Repository` interface and return the
+same snapshot shape, so every queue, rule and page runs identical code in both.
+That is what makes demo mode a faithful rehearsal rather than a separate app.
+
+Four ideas hold it together.
 
 **The database enforces the product rules.** A partial unique index allows one
 open follow-up per customer, so duplicate reminders are impossible rather than
@@ -301,6 +331,12 @@ score that must clear a threshold.
 showing an automated outbound email does not mean I emailed anyone. Only
 activities with `performed_by_user = true` count as an attempt, which is why a
 customer imported from a screenshot correctly reads as untouched.
+
+**Waiting for customer is never a dead end.** Parking a lead always sets a
+response deadline. When it passes with no reply, the follow-up returns to the
+action queue; when the customer does reply, the waiting state clears and the
+follow-up becomes due immediately so the next decision is asked for rather than
+deferred. Both halves are enforced in SQL as well as in the client.
 
 ---
 
@@ -323,9 +359,12 @@ customer imported from a screenshot correctly reads as untouched.
 - Webhook payloads are rejected unless the signature verifies.
 - No service-role key in client code, at all.
 
-`npm run test:db` proves the isolation rather than asserting it: 14 assertions
+`npm run test:db` proves the isolation rather than asserting it: 26 assertions
 covering cross-user reads, cross-user writes, forged parent references,
-append-only enforcement and the product constraints.
+append-only enforcement and the product constraints. The Phase 2 functions are
+`security invoker`, so they add convenience and never authority — one of the
+assertions confirms that scheduling a follow-up against another user's customer
+is refused, and another confirms the anonymous role still reaches nothing.
 
 ---
 
@@ -342,8 +381,8 @@ first.
 | Phase | Scope |
 | --- | --- |
 | 1 ✅ | Foundation: schema, RLS, auth, shell, provider interfaces |
-| 2 | Lead tracker: create and edit customers, follow-ups, activities, search |
-| 3 | WhatsApp: reminders, digests, text replies, the signed webhook |
+| 2 ✅ | Manual lead tracker: customers, activities, follow-ups, dashboard, search |
+| 3 | WhatsApp: reminders, digests, text replies, the signed webhook, scheduler |
 | 4 | Screenshot extraction with Tesseract.js and a review step |
 | 5 | Voice-note commands, off by default |
 

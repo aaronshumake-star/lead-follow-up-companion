@@ -52,6 +52,65 @@ async function openCustomer(page: Page, fullName = CUSTOMER) {
   await expect(page.getByRole('heading', { level: 1, name: fullName })).toBeVisible()
 }
 
+test.describe('desktop layout', () => {
+  test.use({ viewport: { width: 1920, height: 1080 } })
+
+  test('shows all eight dashboard tiles without horizontal scrolling', async ({ page }) => {
+    await page.goto('/')
+
+    const summary = page.getByLabel('Queue summary')
+    await expect(summary).toBeVisible()
+
+    for (const label of [
+      'Action Required Now',
+      'Overdue',
+      'Due Today',
+      'Due Tomorrow',
+      'Waiting for Customer',
+      'No Next Action',
+      'Upcoming Appointments',
+      'Needs Review',
+    ]) {
+      await expect(summary.getByText(label, { exact: true })).toBeVisible()
+    }
+
+    // Every tile has to sit inside the viewport, not past its right edge.
+    const tiles = await summary.locator('> div').all()
+    expect(tiles).toHaveLength(8)
+
+    for (const tile of tiles) {
+      const box = await tile.boundingBox()
+      expect(box).not.toBeNull()
+      expect((box?.x ?? 0) + (box?.width ?? 0)).toBeLessThanOrEqual(1920)
+    }
+
+    const overflows = await page.evaluate(
+      () => document.documentElement.scrollWidth > document.documentElement.clientWidth,
+    )
+    expect(overflows).toBe(false)
+  })
+
+  test('offers a visible New customer button that opens the dialog', async ({ page }) => {
+    await page.goto('/customers')
+
+    const newCustomer = page.getByRole('button', { name: 'New customer' })
+    await expect(newCustomer).toBeVisible()
+    await expect(newCustomer).toBeInViewport()
+
+    await newCustomer.click()
+    await expect(page.getByRole('dialog')).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'New customer' })).toBeVisible()
+  })
+
+  test('no page claims to be a read-only preview any more', async ({ page }) => {
+    for (const path of ['/', '/customers', '/follow-ups', '/screenshots', '/whatsapp', '/settings']) {
+      await page.goto(path)
+      await expect(page.getByText(/read-only preview/i)).toHaveCount(0)
+      await expect(page.getByText(/^Phase 1$/)).toHaveCount(0)
+    }
+  })
+})
+
 test.describe('manual lead tracking workflow', () => {
   test('creates a customer and records the entered phone and email as channels', async ({ page }) => {
     await createCustomer(page)
