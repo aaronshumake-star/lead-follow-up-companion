@@ -1,0 +1,57 @@
+# Supabase CLI configuration for local development.
+#
+# Only settings that differ from the defaults, or that matter for this project,
+# are listed. Run `npx supabase start` to bring up a local stack, then
+# `npx supabase db reset` to replay migrations and seed.sql.
+
+project_id = "lead-follow-up-companion"
+
+[api]
+enabled = true
+port = 54321
+schemas = ["public"]
+extra_search_path = ["public", "extensions"]
+# One user, small result sets. A low cap keeps an accidental unbounded query
+# from pulling the whole table.
+max_rows = 500
+
+[db]
+port = 54322
+shadow_port = 54320
+# Match the Supabase hosted default so local behaviour reflects production.
+major_version = 17
+
+[studio]
+enabled = true
+port = 54323
+
+[inbucket]
+# Local email capture for auth flows.
+enabled = true
+port = 54324
+
+[auth]
+enabled = true
+site_url = "http://localhost:5173"
+additional_redirect_urls = ["http://localhost:5173"]
+jwt_expiry = 3600
+enable_refresh_token_rotation = true
+refresh_token_reuse_interval = 10
+# Single-user application: the one account is created by hand, so open
+# registration is disabled everywhere including locally.
+enable_signup = false
+
+[auth.email]
+enable_signup = false
+double_confirm_changes = true
+enable_confirmations = true
+
+[storage]
+enabled = true
+# Screenshots are not retained by default; this cap applies only when the
+# retention switch is deliberately turned on.
+file_size_limit = "10MiB"
+
+[db.seed]
+enabled = true
+sql_paths = ["./seed.sql"]

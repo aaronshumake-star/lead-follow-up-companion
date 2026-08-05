@@ -1,0 +1,74 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# The whole suite runs in well under a minute, which keeps this comfortably
+# inside the free Actions allowance documented in COST_LIMITS.md.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - run: npm run lint
+
+      - run: npm run typecheck
+
+      - run: npm test
+
+      - run: npm run build
+
+  database:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Replay migrations and run the SQL test suite
+        env:
+          PGHOST: localhost
+          PGPORT: '5432'
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: bash scripts/test-db.sh
+
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - run: npx playwright install --with-deps chromium
+
+      - run: npm run test:e2e
