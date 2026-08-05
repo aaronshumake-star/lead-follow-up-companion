@@ -12,14 +12,18 @@
 
 import type {
   Activity,
+  ClarificationSession,
   Customer,
   CustomerContactMethod,
   FollowUp,
   NotificationLogEntry,
   Profile,
   Screenshot,
+  ScreenshotExtractionField,
+  UsageEvent,
   VehicleInterest,
 } from '../domain/models.ts'
+import type { StoredMatchCandidate } from './workspace.ts'
 import type { AppUser } from '../features/auth/auth-context.ts'
 import { DEFAULT_SETTINGS } from '../domain/settings.ts'
 
@@ -615,66 +619,188 @@ export const DEMO_VEHICLE_INTERESTS: VehicleInterest[] = [
   },
 ]
 
-export const DEMO_SCREENSHOTS: Screenshot[] = [
-  {
-    id: 's-1',
+function screenshot(overrides: Partial<Screenshot> & Pick<Screenshot, 'id' | 'fileHash'>): Screenshot {
+  return {
     customerId: null,
-    fileHash: 'b2'.repeat(32),
     mimeType: 'image/png',
+    byteSize: 190_000,
+    status: 'applied',
+    extractionProvider: 'seed',
+    rawText: null,
+    capturedAt: daysFromNow(-1),
+    createdAt: daysFromNow(-1),
+    decision: null,
+    decisionReason: null,
+    overallConfidence: null,
+    warnings: [],
+    containsMultipleCustomers: false,
+    imageWidth: 1280,
+    imageHeight: 720,
+    originalFilename: null,
+    // Images are discarded after extraction unless retention is switched on.
+    retained: false,
+    reviewResolvedAt: null,
+    reviewAction: null,
+    ...overrides,
+  }
+}
+
+export const DEMO_SCREENSHOTS: Screenshot[] = [
+  // Seeded into the review queue so the exception path is visible on a fresh
+  // install: two customers appear in one capture, which can never be automatic.
+  screenshot({
+    id: 's-1',
+    fileHash: 'b2'.repeat(32),
     byteSize: 210_044,
     status: 'needs_review',
-    extractionProvider: 'seed',
+    decision: 'NEEDS_CONFLICT_REVIEW',
+    decisionReason: 'More than one customer appears in this screenshot.',
+    overallConfidence: 0.48,
+    warnings: ['multiple_customers_detected'],
+    containsMultipleCustomers: true,
+    originalFilename: 'crm-list-view.png',
     rawText:
-      'Customer: Renata Okonkwo\nID: RV-100142\nPhone: (555) 010-0142\nStatus: Working\nLast contact: 4 days ago',
+      'Customer: Renata Okonkwo\nID: RV-100142\nPhone: (555) 010-0142\nStatus: Working\nCustomer: Priya Raghunathan\nPhone: (555) 010-0163',
     capturedAt: hoursFromNow(-2),
     createdAt: hoursFromNow(-2),
-  },
-  {
+  }),
+  screenshot({
     id: 's-2',
     customerId: 'c-lindqvist',
     fileHash: 'a1'.repeat(32),
-    mimeType: 'image/png',
     byteSize: 184_320,
     status: 'applied',
-    extractionProvider: 'seed',
+    decision: 'AUTO_CREATE',
+    decisionReason: 'A new customer with no existing match.',
+    overallConfidence: 0.88,
+    originalFilename: 'travis-lindqvist.png',
     rawText:
       'Customer: Travis Lindqvist\nID: RV-100155\nPhone: (555) 010-0155\nCity: Sweetwater, TX\nSource: Internet lead',
-    capturedAt: daysFromNow(-1),
-    createdAt: daysFromNow(-1),
+  }),
+]
+
+export const DEMO_EXTRACTION_FIELDS: ScreenshotExtractionField[] = [
+  {
+    id: 'sf-1',
+    screenshotId: 's-1',
+    fieldKey: 'full_name',
+    fieldValue: 'Renata Okonkwo',
+    confidence: 0.82,
+    accepted: null,
+    verified: false,
+    appliedAsUnverified: false,
+  },
+  {
+    id: 'sf-2',
+    screenshotId: 's-1',
+    fieldKey: 'dealership_customer_id',
+    fieldValue: 'RV-100142',
+    confidence: 0.95,
+    accepted: null,
+    verified: true,
+    appliedAsUnverified: false,
+  },
+  {
+    id: 'sf-3',
+    screenshotId: 's-1',
+    fieldKey: 'primary_phone',
+    fieldValue: '(555) 010-0142',
+    confidence: 0.9,
+    accepted: null,
+    verified: true,
+    appliedAsUnverified: false,
   },
 ]
 
-export const DEMO_NOTIFICATIONS: NotificationLogEntry[] = [
+export const DEMO_MATCH_CANDIDATES: StoredMatchCandidate[] = [
   {
-    id: 'n-1',
+    id: 'mc-1',
+    screenshotId: 's-1',
+    customerId: 'c-okonkwo',
+    score: 0.94,
+    reasons: ['dealership_customer_id', 'phone'],
+    conflicts: [],
+    selected: false,
+  },
+]
+
+export const DEMO_USAGE_EVENTS: UsageEvent[] = [
+  { id: 'u-1', kind: 'ocr_job', quantity: 2, estimatedCostUsd: 0, occurredAt: daysFromNow(-1) },
+  { id: 'u-2', kind: 'message_sent', quantity: 2, estimatedCostUsd: 0.03, occurredAt: hoursFromNow(-9) },
+  { id: 'u-3', kind: 'message_received', quantity: 1, estimatedCostUsd: 0, occurredAt: hoursFromNow(-3) },
+]
+
+export const DEMO_CLARIFICATION_SESSIONS: ClarificationSession[] = []
+
+function notification(
+  overrides: Partial<NotificationLogEntry> & Pick<NotificationLogEntry, 'id' | 'kind' | 'idempotencyKey'>,
+): NotificationLogEntry {
+  return {
     customerId: null,
-    kind: 'morning_summary',
+    followUpId: null,
     status: 'delivered',
+    reminderStage: null,
+    payloadSummary: null,
+    billable: true,
+    attemptCount: 1,
+    error: null,
+    permanentFailure: false,
+    nextAttemptAt: null,
+    sentAt: hoursFromNow(-1),
+    createdAt: hoursFromNow(-1),
+    ...overrides,
+  }
+}
+
+export const DEMO_NOTIFICATIONS: NotificationLogEntry[] = [
+  notification({
+    id: 'n-1',
+    kind: 'morning_summary',
+    reminderStage: 'morning_digest',
     idempotencyKey: 'seed:morning_summary',
     payloadSummary: '3 due today, 1 overdue, 2 with no next action',
-    billable: true,
     sentAt: hoursFromNow(-9),
-  },
-  {
+    createdAt: hoursFromNow(-9),
+  }),
+  notification({
     id: 'n-2',
     customerId: 'c-ayala',
     kind: 'follow_up_reminder',
-    status: 'delivered',
+    reminderStage: 'due_now',
     idempotencyKey: 'seed:follow_up_reminder:ayala',
     payloadSummary: '1 follow-up due: Jesus Ayala 10:00',
-    billable: true,
     sentAt: hoursFromNow(-5),
-  },
-  {
+    createdAt: hoursFromNow(-5),
+  }),
+  notification({
     id: 'n-3',
     customerId: 'c-ayala',
     kind: 'command_confirmation',
     status: 'sent',
     idempotencyKey: 'seed:command_confirmation',
     payloadSummary: 'Logged call, follow-up set for tomorrow 10:00',
+    // Replies inside the 24-hour service window are free.
     billable: false,
     sentAt: hoursFromNow(-3),
-  },
+    createdAt: hoursFromNow(-3),
+  }),
+  // A permanent failure, seeded so the diagnostics surface is never empty on a
+  // fresh install and the "stays visible" behaviour is demonstrable.
+  notification({
+    id: 'n-4',
+    customerId: 'c-raghunathan',
+    kind: 'follow_up_reminder',
+    reminderStage: 'overdue',
+    status: 'failed',
+    idempotencyKey: 'seed:follow_up_reminder:raghunathan:overdue',
+    payloadSummary: 'Overdue: Priya Raghunathan',
+    billable: false,
+    attemptCount: 3,
+    error: 'Provider rejected the message (simulated)',
+    permanentFailure: true,
+    sentAt: null,
+    createdAt: hoursFromNow(-6),
+  }),
 ]
 
 export const DEMO_PROFILE: Profile = {

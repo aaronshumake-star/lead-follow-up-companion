@@ -8,12 +8,18 @@
 import type {
   Activity,
   AuditEntry,
+  ClarificationSession,
   Customer,
   CustomerContactMethod,
   FollowUp,
+  NotificationLogEntry,
   Profile,
+  Screenshot,
+  ScreenshotExtractionField,
+  UsageEvent,
   VehicleInterest,
 } from '../../domain/models.ts'
+import type { StoredMatchCandidate } from '../workspace.ts'
 import { DEFAULT_SETTINGS } from '../../domain/settings.ts'
 
 type Row = Record<string, unknown>
@@ -199,6 +205,176 @@ export function toProfile(row: Row): Profile {
       DEFAULT_SETTINGS.defaultLeadPriority) as Profile['defaultLeadPriority'],
     dateTimeDisplay: (text(row, 'date_time_display') ??
       DEFAULT_SETTINGS.dateTimeDisplay) as Profile['dateTimeDisplay'],
+
+    autoImportEnabled: bool(row, 'auto_import_enabled', DEFAULT_SETTINGS.autoImportEnabled),
+    autoFollowUpOnImport: bool(row, 'auto_follow_up_on_import', DEFAULT_SETTINGS.autoFollowUpOnImport),
+    newLeadSameDayCutoffHour: num(
+      row,
+      'new_lead_same_day_cutoff_hour',
+      DEFAULT_SETTINGS.newLeadSameDayCutoffHour,
+    ),
+    sameDayFollowUpDelayHours: num(
+      row,
+      'same_day_follow_up_delay_hours',
+      DEFAULT_SETTINGS.sameDayFollowUpDelayHours,
+    ),
+
+    remindersEnabled: bool(row, 'reminders_enabled', DEFAULT_SETTINGS.remindersEnabled),
+    individualRemindersEnabled: bool(
+      row,
+      'individual_reminders_enabled',
+      DEFAULT_SETTINGS.individualRemindersEnabled,
+    ),
+    digestOnly: bool(row, 'digest_only', DEFAULT_SETTINGS.digestOnly),
+    morningDigestEnabled: bool(row, 'morning_digest_enabled', DEFAULT_SETTINGS.morningDigestEnabled),
+    endOfDayDigestEnabled: bool(
+      row,
+      'end_of_day_digest_enabled',
+      DEFAULT_SETTINGS.endOfDayDigestEnabled,
+    ),
+    endOfDayDigestAt: timeOfDay(row, 'end_of_day_digest_at', DEFAULT_SETTINGS.endOfDayDigestAt),
+    appointmentReminderLeadHours: num(
+      row,
+      'appointment_reminder_lead_hours',
+      DEFAULT_SETTINGS.appointmentReminderLeadHours,
+    ),
+    overdueReminderIntervalHours: num(
+      row,
+      'overdue_reminder_interval_hours',
+      DEFAULT_SETTINGS.overdueReminderIntervalHours,
+    ),
+    reminderMaxAttempts: num(row, 'reminder_max_attempts', DEFAULT_SETTINGS.reminderMaxAttempts),
+
+    annualCostThresholdUsd: num(
+      row,
+      'annual_cost_threshold_usd',
+      DEFAULT_SETTINGS.annualCostThresholdUsd,
+    ),
+  }
+}
+
+function numberOrNull(row: Row, key: string): number | null {
+  const value = row[key]
+  if (typeof value === 'number') return value
+  // PostgREST returns numeric columns as strings to preserve precision.
+  if (typeof value === 'string' && value.trim() !== '') {
+    const parsed = Number(value)
+    return Number.isFinite(parsed) ? parsed : null
+  }
+  return null
+}
+
+function stringArray(row: Row, key: string): string[] {
+  const value = row[key]
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : []
+}
+
+export function toScreenshot(row: Row): Screenshot {
+  return {
+    id: requiredText(row, 'id'),
+    customerId: text(row, 'customer_id'),
+    fileHash: requiredText(row, 'file_hash'),
+    mimeType: requiredText(row, 'mime_type', 'image/png'),
+    byteSize: num(row, 'byte_size', 0),
+    status: (text(row, 'status') ?? 'uploaded') as Screenshot['status'],
+    extractionProvider: text(row, 'extraction_provider'),
+    rawText: text(row, 'raw_text'),
+    capturedAt: text(row, 'captured_at'),
+    createdAt: requiredText(row, 'created_at'),
+    decision: text(row, 'decision') as Screenshot['decision'],
+    decisionReason: text(row, 'decision_reason'),
+    overallConfidence: numberOrNull(row, 'overall_confidence'),
+    warnings: stringArray(row, 'warnings'),
+    containsMultipleCustomers: bool(row, 'contains_multiple_customers'),
+    imageWidth: numberOrNull(row, 'image_width'),
+    imageHeight: numberOrNull(row, 'image_height'),
+    originalFilename: text(row, 'original_filename'),
+    retained: bool(row, 'retained'),
+    reviewResolvedAt: text(row, 'review_resolved_at'),
+    reviewAction: text(row, 'review_action'),
+  }
+}
+
+export function toExtractionField(row: Row): ScreenshotExtractionField {
+  const accepted = row['accepted']
+
+  return {
+    id: requiredText(row, 'id'),
+    screenshotId: requiredText(row, 'screenshot_id'),
+    fieldKey: requiredText(row, 'field_key'),
+    fieldValue: text(row, 'field_value'),
+    confidence: numberOrNull(row, 'confidence'),
+    accepted: typeof accepted === 'boolean' ? accepted : null,
+    verified: bool(row, 'verified'),
+    appliedAsUnverified: bool(row, 'applied_as_unverified'),
+  }
+}
+
+export function toStoredMatchCandidate(row: Row): StoredMatchCandidate {
+  const signals = row['match_signals']
+
+  return {
+    id: requiredText(row, 'id'),
+    screenshotId: requiredText(row, 'screenshot_id'),
+    customerId: requiredText(row, 'customer_id'),
+    score: numberOrNull(row, 'score') ?? 0,
+    reasons:
+      typeof signals === 'object' && signals !== null && Array.isArray((signals as { reasons?: unknown }).reasons)
+        ? ((signals as { reasons: string[] }).reasons ?? [])
+        : [],
+    conflicts:
+      typeof signals === 'object' && signals !== null && Array.isArray((signals as { conflicts?: unknown }).conflicts)
+        ? ((signals as { conflicts: Array<{ field: string; existing: string; incoming: string }> }).conflicts ?? [])
+        : [],
+    selected: bool(row, 'selected'),
+  }
+}
+
+export function toNotification(row: Row): NotificationLogEntry {
+  return {
+    id: requiredText(row, 'id'),
+    customerId: text(row, 'customer_id'),
+    followUpId: text(row, 'follow_up_id'),
+    kind: (text(row, 'kind') ?? 'system_alert') as NotificationLogEntry['kind'],
+    status: (text(row, 'status') ?? 'queued') as NotificationLogEntry['status'],
+    idempotencyKey: requiredText(row, 'idempotency_key'),
+    reminderStage: text(row, 'reminder_stage') as NotificationLogEntry['reminderStage'],
+    payloadSummary: text(row, 'payload_summary'),
+    billable: bool(row, 'billable', true),
+    attemptCount: num(row, 'attempt_count', 0),
+    error: text(row, 'error'),
+    permanentFailure: bool(row, 'permanent_failure'),
+    nextAttemptAt: text(row, 'next_attempt_at'),
+    sentAt: text(row, 'sent_at'),
+    createdAt: requiredText(row, 'created_at'),
+  }
+}
+
+export function toClarificationSession(row: Row): ClarificationSession {
+  const options = row['options']
+  const payload = row['pending_payload']
+
+  return {
+    id: requiredText(row, 'id'),
+    kind: requiredText(row, 'kind'),
+    prompt: requiredText(row, 'prompt'),
+    options: Array.isArray(options) ? (options as ClarificationSession['options']) : [],
+    pendingPayload:
+      typeof payload === 'object' && payload !== null ? (payload as Record<string, unknown>) : {},
+    expiresAt: requiredText(row, 'expires_at'),
+    resolvedAt: text(row, 'resolved_at'),
+    resolution: text(row, 'resolution'),
+    createdAt: requiredText(row, 'created_at'),
+  }
+}
+
+export function toUsageEvent(row: Row): UsageEvent {
+  return {
+    id: requiredText(row, 'id'),
+    kind: (text(row, 'kind') ?? 'ocr_job') as UsageEvent['kind'],
+    quantity: num(row, 'quantity', 1),
+    estimatedCostUsd: numberOrNull(row, 'estimated_cost_usd') ?? 0,
+    occurredAt: requiredText(row, 'occurred_at'),
   }
 }
 

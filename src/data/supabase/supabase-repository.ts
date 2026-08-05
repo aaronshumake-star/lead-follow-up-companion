@@ -34,12 +34,26 @@ import {
   definedOnly,
   toActivity,
   toAuditEntry,
+  toClarificationSession,
   toContactMethod,
   toCustomer,
+  toExtractionField,
   toFollowUp,
+  toNotification,
   toProfile,
+  toScreenshot,
+  toStoredMatchCandidate,
+  toUsageEvent,
   toVehicleInterest,
 } from './mappers.ts'
+import type { ApplyImportInput, ImportOutcome, ResolveReviewInput } from '../workspace.ts'
+import type { ScreenshotExtractionField, UsageEventKind } from '../../domain/models.ts'
+import type { ImportDecision } from '../../domain/screenshot/decision-engine.ts'
+import { isAutomatic } from '../../domain/screenshot/decision-engine.ts'
+import { applyCorrections, buildImportPlan } from '../../domain/screenshot/import-plan.ts'
+import { planAutoFollowUp } from '../../domain/screenshot/auto-follow-up.ts'
+import { settingsFromProfile } from '../../domain/settings.ts'
+import { emptyExtraction, type ExtractionResult } from '../../domain/screenshot/extraction.ts'
 
 /**
  * Ceiling on the activity ledger fetched per load. A personal pipeline will not
@@ -62,16 +76,35 @@ export class SupabaseRepository implements Repository {
   }
 
   async load(): Promise<WorkspaceSnapshot> {
-    const [profile, customers, contactMethods, vehicleInterests, activities, followUps, auditEntries] =
-      await Promise.all([
-        this.loadProfile(),
-        this.selectAll('customers', 'updated_at'),
-        this.selectAll('customer_contact_methods', 'created_at'),
-        this.selectAll('vehicle_interests', 'created_at'),
-        this.selectAll('activities', 'occurred_at', ACTIVITY_FETCH_LIMIT),
-        this.selectAll('follow_ups', 'due_at'),
-        this.selectAll('audit_log', 'created_at', 500),
-      ])
+    const [
+      profile,
+      customers,
+      contactMethods,
+      vehicleInterests,
+      activities,
+      followUps,
+      auditEntries,
+      screenshots,
+      extractionFields,
+      matchCandidates,
+      notifications,
+      clarificationSessions,
+      usageEvents,
+    ] = await Promise.all([
+      this.loadProfile(),
+      this.selectAll('customers', 'updated_at'),
+      this.selectAll('customer_contact_methods', 'created_at'),
+      this.selectAll('vehicle_interests', 'created_at'),
+      this.selectAll('activities', 'occurred_at', ACTIVITY_FETCH_LIMIT),
+      this.selectAll('follow_ups', 'due_at'),
+      this.selectAll('audit_log', 'created_at', 500),
+      this.selectAll('screenshots', 'created_at', 200),
+      this.selectAll('screenshot_extraction_fields', 'created_at', 1000),
+      this.selectAll('customer_match_candidates', 'created_at', 500),
+      this.selectAll('notification_log', 'created_at', 500),
+      this.selectAll('clarification_sessions', 'created_at', 50),
+      this.selectAll('usage_events', 'occurred_at', 2000),
+    ])
 
     return {
       profile,
@@ -81,6 +114,12 @@ export class SupabaseRepository implements Repository {
       activities: activities.map(toActivity),
       followUps: followUps.map(toFollowUp),
       auditEntries: auditEntries.map(toAuditEntry),
+      screenshots: screenshots.map(toScreenshot),
+      extractionFields: extractionFields.map(toExtractionField),
+      matchCandidates: matchCandidates.map(toStoredMatchCandidate),
+      notifications: notifications.map(toNotification),
+      clarificationSessions: clarificationSessions.map(toClarificationSession),
+      usageEvents: usageEvents.map(toUsageEvent),
     }
   }
 
@@ -516,6 +555,23 @@ export class SupabaseRepository implements Repository {
           waiting_timeout_hours: patch.waitingTimeoutHours,
           default_lead_priority: patch.defaultLeadPriority,
           date_time_display: patch.dateTimeDisplay,
+
+          auto_import_enabled: patch.autoImportEnabled,
+          auto_follow_up_on_import: patch.autoFollowUpOnImport,
+          new_lead_same_day_cutoff_hour: patch.newLeadSameDayCutoffHour,
+          same_day_follow_up_delay_hours: patch.sameDayFollowUpDelayHours,
+
+          reminders_enabled: patch.remindersEnabled,
+          individual_reminders_enabled: patch.individualRemindersEnabled,
+          digest_only: patch.digestOnly,
+          morning_digest_enabled: patch.morningDigestEnabled,
+          end_of_day_digest_enabled: patch.endOfDayDigestEnabled,
+          end_of_day_digest_at: patch.endOfDayDigestAt,
+          appointment_reminder_lead_hours: patch.appointmentReminderLeadHours,
+          overdue_reminder_interval_hours: patch.overdueReminderIntervalHours,
+          reminder_max_attempts: patch.reminderMaxAttempts,
+
+          annual_cost_threshold_usd: patch.annualCostThresholdUsd,
         }),
       )
       .eq('id', this.userId)
@@ -533,8 +589,442 @@ export class SupabaseRepository implements Repository {
   }
 
   // -------------------------------------------------------------------------
+  // Screenshot intake
+  // -------------------------------------------------------------------------
+
+  async findScreenshotByHash(
+    fileHash: string,
+  ): Promise<{ id: string; decision: ImportDecision | null } | null> {
+    const { data, error } = await this.client
+      .from('screenshots')
+      .select('id, decision')
+      .eq('file_hash', fileHash)
+      .maybeSingle()
+
+    unwrap(error, 'Could not check for a duplicate screenshot')
+    if (data === null) return null
+
+    const row = data as { id: string; decision: string | null }
+    return { id: row.id, decision: (row.decision as ImportDecision | null) ?? null }
+  }
+
+  async applyScreenshotImport(input: ApplyImportInput): Promise<ImportOutcome> {
+    const now = input.now ?? new Date()
+    const screenshotId = await this.insertScreenshot(input, now)
+
+    await this.storeExtractionFields(screenshotId, input)
+    await this.storeMatchCandidates(screenshotId, input)
+
+    if (!isAutomatic(input.decision)) {
+      await this.setScreenshotStatus(
+        screenshotId,
+        input.decision === 'DUPLICATE_IGNORED' ? 'discarded' : 'needs_review',
+      )
+      await this.writeAudit('insert', 'screenshots', screenshotId, `Screenshot: ${input.decision}`, {
+        decision: input.decision,
+        reason: input.decisionReason,
+      })
+
+      return {
+        screenshotId,
+        decision: input.decision,
+        reason: input.decisionReason,
+        customerId: null,
+        customerName: null,
+        changes: [],
+        followUpDueAt: null,
+        requiresReview: input.decision !== 'DUPLICATE_IGNORED',
+        undoable: false,
+      }
+    }
+
+    return this.applyAutomatic(screenshotId, input, now)
+  }
+
+  async resolveScreenshotReview(input: ResolveReviewInput): Promise<ImportOutcome> {
+    const now = input.now ?? new Date()
+
+    const { data, error } = await this.client
+      .from('screenshots')
+      .select('*')
+      .eq('id', input.screenshotId)
+      .single()
+    unwrap(error, 'Could not load the screenshot')
+
+    const screenshot = toScreenshot(data as Record<string, unknown>)
+
+    if (input.action.kind === 'discard') {
+      await this.discardScreenshot(input.screenshotId, 'Discarded during review')
+      return {
+        screenshotId: input.screenshotId,
+        decision: 'EXTRACTION_FAILED',
+        reason: 'Discarded during review',
+        customerId: null,
+        customerName: null,
+        changes: [{ label: 'Screenshot discarded' }],
+        followUpDueAt: null,
+        requiresReview: false,
+        undoable: false,
+      }
+    }
+
+    const { data: fieldRows, error: fieldError } = await this.client
+      .from('screenshot_extraction_fields')
+      .select('*')
+      .eq('screenshot_id', input.screenshotId)
+    unwrap(fieldError, 'Could not load the extracted fields')
+
+    const stored = extractionFromFields(
+      (fieldRows ?? []).map((row) => toExtractionField(row as Record<string, unknown>)),
+    )
+    const extraction = applyCorrections(stored, input.corrections ?? {})
+
+    const targetId =
+      input.action.kind === 'create_new' ? null : (input.action as { customerId: string }).customerId
+
+    if (input.action.kind === 'keep_existing_fields') {
+      await this.client
+        .from('screenshots')
+        .update({
+          status: 'applied',
+          customer_id: targetId,
+          review_resolved_at: now.toISOString(),
+          review_action: 'keep_existing_fields',
+          raw_text: null,
+        })
+        .eq('id', input.screenshotId)
+
+      await this.writeAudit('update', 'screenshots', input.screenshotId, 'Review kept existing fields', {
+        action: 'keep_existing_fields',
+      })
+
+      return {
+        screenshotId: input.screenshotId,
+        decision: 'AUTO_UPDATE',
+        reason: 'Existing values kept',
+        customerId: targetId,
+        customerName: null,
+        changes: [{ label: 'No fields changed' }],
+        followUpDueAt: null,
+        requiresReview: false,
+        undoable: false,
+      }
+    }
+
+    const decision: ImportDecision =
+      input.action.kind === 'create_new'
+        ? 'AUTO_CREATE'
+        : input.action.kind === 'select_existing_unverified'
+          ? 'SAVE_WITH_UNVERIFIED_FIELDS'
+          : 'AUTO_UPDATE'
+
+    const outcome = await this.applyAutomatic(
+      input.screenshotId,
+      {
+        screenshot: {
+          fileHash: screenshot.fileHash,
+          mimeType: screenshot.mimeType,
+          byteSize: screenshot.byteSize,
+          imageWidth: screenshot.imageWidth,
+          imageHeight: screenshot.imageHeight,
+          originalFilename: screenshot.originalFilename,
+        },
+        rawText: screenshot.rawText,
+        extractionProvider: screenshot.extractionProvider ?? 'review',
+        extraction,
+        decision,
+        decisionReason: 'Resolved in review',
+        targetCustomerId: targetId,
+        candidates: [],
+        unverifiedFields: input.action.kind === 'select_existing_unverified' ? ['review_unverified'] : [],
+        warnings: [],
+        retainImage: screenshot.retained,
+        now,
+      },
+      now,
+      input.ignoredFields,
+    )
+
+    await this.client
+      .from('screenshots')
+      .update({ review_resolved_at: now.toISOString(), review_action: input.action.kind })
+      .eq('id', input.screenshotId)
+
+    return outcome
+  }
+
+  async discardScreenshot(screenshotId: string, reason?: string | null): Promise<void> {
+    const { error } = await this.client
+      .from('screenshots')
+      .update({
+        status: 'discarded',
+        raw_text: null,
+        review_resolved_at: new Date().toISOString(),
+        review_action: 'discard',
+      })
+      .eq('id', screenshotId)
+
+    unwrap(error, 'Could not discard the screenshot')
+    await this.writeAudit('delete', 'screenshots', screenshotId, reason ?? 'Screenshot discarded', {})
+  }
+
+  async recordUsage(kind: UsageEventKind, quantity = 1, estimatedCostUsd = 0): Promise<void> {
+    const { error } = await this.client.from('usage_events').insert({
+      user_id: this.userId,
+      kind,
+      quantity,
+      estimated_cost_usd: estimatedCostUsd,
+    })
+
+    unwrap(error, 'Could not record usage')
+  }
+
+  // -------------------------------------------------------------------------
   // Internals
   // -------------------------------------------------------------------------
+
+  /**
+   * Executes an automatic import using the existing repository primitives, so
+   * the writes go through the same RLS-checked paths a manual edit uses.
+   */
+  private async applyAutomatic(
+    screenshotId: string,
+    input: ApplyImportInput,
+    now: Date,
+    ignoredFields?: readonly string[],
+  ): Promise<ImportOutcome> {
+    const extraction = input.extraction
+    if (extraction === null) throw new Error('Nothing was extracted from this screenshot.')
+
+    const snapshot = await this.load()
+    const existing =
+      input.targetCustomerId === null
+        ? null
+        : (snapshot.customers.find((item) => item.id === input.targetCustomerId) ?? null)
+
+    const plan = buildImportPlan({
+      decision: input.decision,
+      extraction,
+      existing,
+      existingContactMethods: snapshot.contactMethods.filter(
+        (item) => item.customerId === existing?.id,
+      ),
+      existingVehicles: snapshot.vehicleInterests.filter((item) => item.customerId === existing?.id),
+      ignoredFields,
+    })
+
+    let customerId = existing?.id ?? null
+    let customerName = existing?.fullName ?? null
+
+    if (plan.createDraft !== null) {
+      customerId = await this.createCustomer({ ...plan.createDraft, leadStatus: plan.createDraft.leadStatus })
+      customerName = plan.createDraft.fullName
+      await this.client.from('customers').update({ source: 'screenshot' }).eq('id', customerId)
+    } else if (customerId !== null && plan.updatePatch !== null && Object.keys(plan.updatePatch).length > 0) {
+      await this.updateCustomer(customerId, plan.updatePatch)
+    }
+
+    if (customerId === null) throw new Error('The import produced no customer.')
+
+    for (const method of plan.contactMethods) {
+      try {
+        await this.addContactMethod(customerId, {
+          method: method.method,
+          value: method.value,
+          label: 'From a screenshot',
+          isVerified: method.verified,
+        })
+      } catch {
+        // A channel already on file is not an error; the unique index simply
+        // refused a duplicate, which is the desired outcome.
+      }
+    }
+
+    if (plan.vehicle !== null) {
+      await this.saveVehicleInterest(customerId, {
+        modelYear: plan.vehicle.modelYear,
+        make: plan.vehicle.make,
+        model: plan.vehicle.model,
+        floorplan: plan.vehicle.floorplan,
+        stockNumber: plan.vehicle.stockNumber,
+        condition: plan.vehicle.condition,
+        isPrimary: plan.vehicle.isPrimary,
+      })
+    }
+
+    for (const activity of plan.activities) {
+      await this.logActivity({
+        customerId,
+        type: activity.type,
+        direction: activity.direction,
+        summary: activity.summary,
+        occurredAt: activity.occurredAt ?? now.toISOString(),
+        source: 'screenshot',
+        // Screenshot-visible activity is never a personal attempt.
+        performedByUser: false,
+      })
+    }
+
+    await this.logActivity({
+      customerId,
+      type: 'screenshot_import',
+      direction: 'internal',
+      summary: `Imported from a screenshot (${input.decision})`,
+      source: 'screenshot',
+      performedByUser: false,
+    })
+
+    const settings = settingsFromProfile(snapshot.profile)
+    const followUpPlan = planAutoFollowUp(
+      { leadStatus: existing?.leadStatus ?? plan.createDraft?.leadStatus ?? 'new' },
+      snapshot.followUps.filter((item) => item.customerId === customerId),
+      settings,
+      { isNewCustomer: existing === null, now },
+    )
+
+    let followUpDueAt: string | null = null
+
+    if (followUpPlan.dueAt !== null) {
+      await this.scheduleFollowUp({
+        customerId,
+        dueAt: followUpPlan.dueAt.toISOString(),
+        reason: followUpPlan.description,
+        priority: settings.defaultLeadPriority,
+        resolution: 'reschedule',
+      })
+      followUpDueAt = followUpPlan.dueAt.toISOString()
+      plan.changes.push('Follow-up scheduled')
+    } else if (followUpPlan.reason === 'kept_existing') {
+      plan.changes.push('Existing follow-up kept')
+    }
+
+    await this.client
+      .from('screenshots')
+      .update({
+        status: 'applied',
+        customer_id: customerId,
+        applied_at: now.toISOString(),
+        // Discarded after a successful extraction unless retention is on.
+        raw_text: input.retainImage ? input.rawText : null,
+      })
+      .eq('id', screenshotId)
+
+    await this.writeAudit(
+      existing === null ? 'insert' : 'update',
+      'customers',
+      customerId,
+      `Screenshot import: ${input.decision}`,
+      {
+        decision: input.decision,
+        reason: input.decisionReason,
+        screenshotId,
+        unverifiedFields: [...input.unverifiedFields],
+      },
+    )
+
+    return {
+      screenshotId,
+      decision: input.decision,
+      reason: input.decisionReason,
+      customerId,
+      customerName,
+      changes: plan.changes.map((label) => ({ label })),
+      followUpDueAt,
+      requiresReview: false,
+      undoable: existing === null,
+    }
+  }
+
+  private async insertScreenshot(input: ApplyImportInput, now: Date): Promise<string> {
+    const { data, error } = await this.client
+      .from('screenshots')
+      .insert({
+        user_id: this.userId,
+        file_hash: input.screenshot.fileHash,
+        mime_type: input.screenshot.mimeType,
+        byte_size: input.screenshot.byteSize,
+        image_width: input.screenshot.imageWidth,
+        image_height: input.screenshot.imageHeight,
+        original_filename: input.screenshot.originalFilename,
+        status: 'extracting',
+        extraction_provider: input.extractionProvider,
+        raw_text: input.rawText,
+        captured_at: input.screenshot.capturedAt ?? now.toISOString(),
+        decision: input.decision,
+        decision_reason: input.decisionReason.slice(0, 300),
+        overall_confidence: input.extraction?.overallConfidence ?? null,
+        warnings: [...input.warnings],
+        contains_multiple_customers: input.extraction?.containsMultipleCustomers ?? false,
+        retained: input.retainImage,
+      })
+      .select('id')
+      .single()
+
+    unwrap(error, 'Could not record the screenshot')
+    return (data as { id: string }).id
+  }
+
+  private async setScreenshotStatus(screenshotId: string, status: string): Promise<void> {
+    const { error } = await this.client.from('screenshots').update({ status }).eq('id', screenshotId)
+    unwrap(error, 'Could not update the screenshot')
+  }
+
+  private async storeExtractionFields(screenshotId: string, input: ApplyImportInput): Promise<void> {
+    const extraction = input.extraction
+    if (extraction === null) return
+
+    const unverified = new Set(input.unverifiedFields)
+    const rows = extractionFieldRows(extraction).map((field) => ({
+      user_id: this.userId,
+      screenshot_id: screenshotId,
+      field_key: field.key,
+      field_value: field.value,
+      confidence: field.confidence,
+      verified: !unverified.has(field.key) && field.confidence >= 0.75,
+      applied_as_unverified: unverified.has(field.key),
+    }))
+
+    if (rows.length === 0) return
+
+    const { error } = await this.client.from('screenshot_extraction_fields').insert(rows)
+    unwrap(error, 'Could not store the extracted fields')
+  }
+
+  private async storeMatchCandidates(screenshotId: string, input: ApplyImportInput): Promise<void> {
+    if (input.candidates.length === 0) return
+
+    const rows = input.candidates.map((candidate) => ({
+      user_id: this.userId,
+      customer_id: candidate.customer.id,
+      screenshot_id: screenshotId,
+      score: candidate.score,
+      match_signals: { reasons: candidate.reasons, conflicts: candidate.conflicts },
+      selected: candidate.customer.id === input.targetCustomerId,
+    }))
+
+    const { error } = await this.client.from('customer_match_candidates').insert(rows)
+    unwrap(error, 'Could not store the match candidates')
+  }
+
+  private async writeAudit(
+    action: string,
+    tableName: string,
+    recordId: string | null,
+    summary: string,
+    metadata: Record<string, unknown>,
+  ): Promise<void> {
+    const { error } = await this.client.from('audit_log').insert({
+      user_id: this.userId,
+      action,
+      table_name: tableName,
+      record_id: recordId,
+      summary: summary.slice(0, 500),
+      metadata,
+      source: 'screenshot',
+    })
+
+    unwrap(error, 'Could not write the audit entry')
+  }
 
   private async applyPlan(customerId: string, plan: FollowUpPlan): Promise<void> {
     switch (plan.kind) {
@@ -651,3 +1141,93 @@ function mapNullable(value: string | null | undefined): string | null | undefine
 
 /** Re-exported for tests that need the same normalization the repository uses. */
 export const normalizers = { normalizeName, normalizePhone, normalizeEmail }
+
+/** The extraction fields worth persisting, with the confidence each was read at. */
+function extractionFieldRows(
+  extraction: ExtractionResult,
+): Array<{ key: string; value: string; confidence: number }> {
+  const entries: Array<[string, string | null, number]> = [
+    ['full_name', extraction.customer.fullName, 0.9],
+    ['primary_phone', extraction.customer.phone, 0.85],
+    ['primary_email', extraction.customer.email, 0.85],
+    ['dealership_customer_id', extraction.customer.customerId, 0.95],
+    ['city', extraction.customer.city, 0.8],
+    ['state', extraction.customer.state, 0.8],
+    ['lead_source', extraction.leadSource, 0.7],
+    ['salesperson', extraction.salesperson, 0.7],
+    ['vehicle_make', extraction.vehicleInterest.make, 0.75],
+    ['vehicle_model', extraction.vehicleInterest.model, 0.75],
+    ['vehicle_floorplan', extraction.vehicleInterest.floorplan, 0.7],
+    ['vehicle_stock_number', extraction.vehicleInterest.stockNumber, 0.85],
+  ]
+
+  return entries
+    .filter((entry): entry is [string, string, number] => entry[1] !== null)
+    .map(([key, value, confidence]) => ({ key, value, confidence }))
+}
+
+/** Rebuilds an extraction from stored fields so review can replay the planner. */
+function extractionFromFields(fields: readonly ScreenshotExtractionField[]): ExtractionResult {
+  const extraction = emptyExtraction()
+
+  for (const field of fields) {
+    switch (field.fieldKey) {
+      case 'full_name':
+        extraction.customer.fullName = field.fieldValue
+        break
+      case 'primary_phone':
+        extraction.customer.phone = field.fieldValue
+        break
+      case 'primary_email':
+        extraction.customer.email = field.fieldValue
+        break
+      case 'dealership_customer_id':
+        extraction.customer.customerId = field.fieldValue
+        break
+      case 'city':
+        extraction.customer.city = field.fieldValue
+        break
+      case 'state':
+        extraction.customer.state = field.fieldValue
+        break
+      case 'lead_source':
+        extraction.leadSource = field.fieldValue
+        break
+      case 'salesperson':
+        extraction.salesperson = field.fieldValue
+        break
+      case 'vehicle_make':
+        extraction.vehicleInterest.make = field.fieldValue
+        break
+      case 'vehicle_model':
+        extraction.vehicleInterest.model = field.fieldValue
+        break
+      case 'vehicle_floorplan':
+        extraction.vehicleInterest.floorplan = field.fieldValue
+        break
+      case 'vehicle_stock_number':
+        extraction.vehicleInterest.stockNumber = field.fieldValue
+        break
+      default:
+        break
+    }
+  }
+
+  if (extraction.customer.phone !== null) {
+    extraction.availableContactMethods.push(
+      { method: 'phone_call', available: true, value: extraction.customer.phone, confidence: 0.9 },
+      { method: 'sms', available: true, value: extraction.customer.phone, confidence: 0.8 },
+    )
+  }
+  if (extraction.customer.email !== null) {
+    extraction.availableContactMethods.push({
+      method: 'email',
+      available: true,
+      value: extraction.customer.email,
+      confidence: 0.9,
+    })
+  }
+
+  extraction.overallConfidence = 0.9
+  return extraction
+}
