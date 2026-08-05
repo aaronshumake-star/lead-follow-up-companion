@@ -29,14 +29,18 @@ function FieldShell({ label, hint, error, required, children }: FieldShellProps)
 
   return (
     <div className="space-y-1">
-      <label htmlFor={controlId} className="block text-sm font-medium text-slate-300">
-        {label}
+      {/* The required marker sits outside the label so it cannot leak into the
+          accessible name; the input's own `required` is what conveys it. */}
+      <div className="flex items-baseline gap-1">
+        <label htmlFor={controlId} className="block text-sm font-medium text-slate-300">
+          {label}
+        </label>
         {required === true && (
-          <span className="ml-1 text-rose-400" aria-hidden>
+          <span className="text-rose-400" aria-hidden>
             *
           </span>
         )}
-      </label>
+      </div>
 
       {children(controlId, describedBy === '' ? undefined : describedBy)}
 

@@ -25,6 +25,13 @@
       "rules": {
         "no-console": "off"
       }
+    },
+    {
+      "files": ["src/test-support/**"],
+      "rules": {
+        "no-console": "off",
+        "react/only-export-components": "off"
+      }
     }
   ],
   "ignorePatterns": ["dist", "dev-dist", "node_modules", "coverage", "playwright-report", "test-results"]
