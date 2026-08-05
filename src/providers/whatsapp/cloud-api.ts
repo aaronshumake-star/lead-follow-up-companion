@@ -223,6 +223,20 @@ export function createCloudApiProvider(config: CloudApiConfig): CloudApiProvider
 }
 
 /**
+ * Cloud API error codes worth another attempt.
+ *
+ * Everything else — an undeliverable number, a re-engagement rejection, an
+ * account problem — will fail identically on a retry, so those are recorded as
+ * permanent and surfaced in diagnostics instead of being sent again.
+ */
+const RETRYABLE_PROVIDER_CODES = new Set([
+  130429, // rate limit hit
+  131000, // generic temporary failure
+  131056, // pair rate limit hit
+  133016, // account temporarily unavailable
+])
+
+/**
  * Extracts messages and status events from a Cloud API envelope.
  *
  * Defensive throughout: the payload is untrusted until the signature has been
@@ -286,9 +300,10 @@ function parseEnvelope(payload: unknown): WebhookParseResult {
           status: state === 'failed' ? 'failed' : (state as WhatsAppStatusEvent['status']),
           timestamp: toIso(asString(status['timestamp'])),
           errorTitle: asString(firstError?.['title']) ?? undefined,
-          // 4xx-style provider codes are permanent; anything else may be worth
-          // one more attempt.
-          retryable: code === null ? true : code >= 500,
+          // Allow-list rather than a range: Meta's codes are not HTTP statuses,
+          // and defaulting to "retry" would spend billable attempts on
+          // rejections that will never succeed.
+          retryable: code !== null && RETRYABLE_PROVIDER_CODES.has(code),
         })
       }
     }

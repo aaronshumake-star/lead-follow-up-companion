@@ -50,3 +50,4 @@ run_suite() {
 
 run_suite supabase/tests/01_rls_and_constraints.sql 'All database tests passed.'
 run_suite supabase/tests/02_phase2_follow_up_engine.sql 'All Phase 2 database tests passed.'
+run_suite supabase/tests/03_phase3_intake_and_notifications.sql 'All Phase 3 database tests passed.'
