@@ -45,6 +45,19 @@ export default defineConfig({
       '@': fileURLToPath(new URL('./src', import.meta.url)),
     },
   },
+  build: {
+    rollupOptions: {
+      output: {
+        // Split the two large dependencies out of the app chunk. They change far
+        // less often than feature code, so a deploy does not invalidate them.
+        manualChunks(id: string) {
+          if (id.includes('node_modules/@supabase')) return 'supabase'
+          if (/node_modules\/(react|react-dom|react-router|scheduler)\//.test(id)) return 'react'
+          return undefined
+        },
+      },
+    },
+  },
   server: {
     port: 5173,
   },
