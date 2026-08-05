@@ -574,7 +574,10 @@ export function extractCustomerReference(text: string): ParsedCommandResult['cus
   if (dealerId !== null) return { dealershipCustomerId: dealerId[1] }
 
   const afterVerb =
-    /\b(?:called|call|texted|text|emailed|email|messaged|met|snooze|mark|remind|note (?:to|for))\s+((?:[A-Z][\w'’-]*)(?:\s+[A-Z][\w'’-]*){0,2})/.exec(
+    // The verb is matched in either case, but the name group stays
+    // case-sensitive: capitalisation is what distinguishes "Called Jesus Ayala"
+    // from "Called about the bunkhouse".
+    /\b(?:[Cc]alled|[Cc]all|[Tt]exted|[Tt]ext|[Ee]mailed|[Ee]mail|[Mm]essaged|[Mm]et|[Ss]nooze|[Mm]ark|[Rr]emind|[Nn]ote (?:to|for))\s+((?:[A-Z][\w'’-]*)(?:\s+[A-Z][\w'’-]*){0,2})/.exec(
       text,
     )
   if (afterVerb !== null) {
