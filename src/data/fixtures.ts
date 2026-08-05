@@ -27,6 +27,7 @@ import type { StoredMatchCandidate } from './workspace.ts'
 import type { AppUser } from '../features/auth/auth-context.ts'
 import { DEFAULT_SETTINGS } from '../domain/settings.ts'
 import { env } from '../config/env.ts'
+import { normalizeEmail, normalizeName, normalizePhone } from '../lib/normalize.ts'
 import { DEMO_APPROVED_NUMBER } from './demo/import-runtime.ts'
 
 export const DEMO_USER: AppUser = {
@@ -60,11 +61,13 @@ function customer(
     userId: DEMO_USER.id,
     firstName: null,
     lastName: null,
-    normalizedName: null,
+    // Derived exactly as the generated columns do, so demo customers are
+    // matchable by name, phone and email the way real ones are.
+    normalizedName: normalizeName(overrides.fullName),
     primaryPhone: null,
-    normalizedPhone: null,
+    normalizedPhone: normalizePhone(overrides.primaryPhone ?? null),
     primaryEmail: null,
-    normalizedEmail: null,
+    normalizedEmail: normalizeEmail(overrides.primaryEmail ?? null),
     dealershipCustomerId: null,
     city: null,
     state: 'TX',

@@ -65,11 +65,14 @@ describe('App', () => {
     expect(await screen.findByRole('heading', { level: 1, name: 'Follow-Ups' })).toBeInTheDocument()
   })
 
-  it('shows every provider as unconfigured on the settings page', async () => {
+  it('shows provider status and confirms nothing can bill from the browser', async () => {
     renderApp('/settings')
     await waitForWorkspace()
 
     expect(await screen.findByRole('heading', { name: /providers/i })).toBeInTheDocument()
-    expect(screen.getAllByText('Not configured').length).toBeGreaterThan(0)
+    // OCR and command parsing are configured from Phase 3, but everything the
+    // browser can reach is free; the billable WhatsApp client is server-only.
+    expect(screen.getAllByText('no cost').length).toBeGreaterThan(0)
+    expect(screen.queryAllByText('can bill')).toHaveLength(0)
   })
 })

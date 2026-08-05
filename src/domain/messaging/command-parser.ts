@@ -595,9 +595,20 @@ export function extractCustomerReference(text: string): ParsedCommandResult['cus
   return null
 }
 
+/**
+ * Words that cannot begin a customer name.
+ *
+ * The leading-name heuristic exists so "Jesus has an appointment Saturday"
+ * works, but a sentence starting with an imperative is an instruction, not a
+ * person — and treating "Ignore previous instructions…" as a customer called
+ * "Ignore" would hand injected text a confidence it has not earned.
+ */
 const COMMAND_WORDS = new Set([
   'called', 'call', 'texted', 'text', 'emailed', 'email', 'snooze', 'mark', 'add', 'who',
   'what', 'when', 'remind', 'done', 'open', 'help', 'tomorrow', 'today', 'next', 'voicemail',
+  'ignore', 'disregard', 'forget', 'override', 'execute', 'run', 'delete', 'remove', 'drop',
+  'update', 'set', 'send', 'show', 'list', 'find', 'make', 'create', 'cancel', 'stop',
+  'please', 'system', 'admin', 'all', 'every', 'everyone',
 ])
 
 function isCommandWord(name: string): boolean {

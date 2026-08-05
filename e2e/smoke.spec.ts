@@ -32,11 +32,17 @@ test.describe('application shell', () => {
     }
   })
 
-  test('reports every provider as unconfigured', async ({ page }) => {
+  test('reports provider status and that nothing can bill from the browser', async ({ page }) => {
     await page.goto('/settings')
 
-    const providers = page.locator('section').filter({ hasText: 'Providers' })
-    await expect(providers.getByText('Not configured').first()).toBeVisible()
+    const providers = page
+      .locator('section')
+      .filter({ has: page.getByRole('heading', { name: 'Providers' }) })
+
+    // OCR and command parsing are configured from Phase 3; both run locally.
+    await expect(providers.getByText('no cost').first()).toBeVisible()
+    await expect(providers.getByText('can bill')).toHaveCount(0)
+    // Voice transcription stays off until Phase 4.
     await expect(providers.getByText('Disabled')).toBeVisible()
   })
 
