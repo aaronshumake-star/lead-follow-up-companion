@@ -1,13 +1,18 @@
-import { env } from '../config/env.ts'
+import { DEFAULT_SETTINGS } from '../domain/settings.ts'
 
 /**
- * Date formatting for the dashboard.
+ * Date formatting.
  *
  * Everything is rendered in the operator's configured zone rather than the
  * browser's, so a follow-up booked for "tomorrow at ten" reads as ten o'clock
  * regardless of where the browser thinks it is.
+ *
+ * The fallback comes from the domain defaults rather than from client
+ * configuration, because this module is also used by the Cloudflare Worker,
+ * where `import.meta.env` does not exist. Callers that know the operator's zone
+ * should always pass it.
  */
-const DEFAULT_ZONE = env.VITE_DEFAULT_TIME_ZONE
+const DEFAULT_ZONE = DEFAULT_SETTINGS.timeZone
 
 export function formatDateTime(iso: string | null, timeZone: string = DEFAULT_ZONE): string {
   if (iso === null) return '—'

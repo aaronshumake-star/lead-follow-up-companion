@@ -26,6 +26,8 @@ import type {
 import type { StoredMatchCandidate } from './workspace.ts'
 import type { AppUser } from '../features/auth/auth-context.ts'
 import { DEFAULT_SETTINGS } from '../domain/settings.ts'
+import { env } from '../config/env.ts'
+import { DEMO_APPROVED_NUMBER } from './demo/import-runtime.ts'
 
 export const DEMO_USER: AppUser = {
   id: '00000000-0000-4000-8000-000000000000',
@@ -806,8 +808,10 @@ export const DEMO_NOTIFICATIONS: NotificationLogEntry[] = [
 export const DEMO_PROFILE: Profile = {
   id: DEMO_USER.id,
   displayName: 'Demo User',
-  whatsappNumberE164: null,
-  whatsappEnabled: false,
+  // Demo mode messages a fictional approved number so the WhatsApp workflow is
+  // exercisable end to end without credentials.
+  whatsappNumberE164: DEMO_APPROVED_NUMBER,
+  whatsappEnabled: true,
   monthlyMessageBudget: 300,
   aiExtractionEnabled: false,
   voiceTranscriptionEnabled: false,
@@ -816,6 +820,7 @@ export const DEMO_PROFILE: Profile = {
   retainVoiceAudio: false,
   // Scheduling preferences share their defaults with a real profile row.
   ...DEFAULT_SETTINGS,
+  timeZone: env.VITE_DEFAULT_TIME_ZONE,
 }
 
 export function activitiesForCustomer(customerId: string): Activity[] {
