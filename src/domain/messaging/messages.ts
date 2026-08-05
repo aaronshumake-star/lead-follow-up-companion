@@ -49,7 +49,7 @@ export function composeIndividualReminder(row: CustomerRow, _settings: UserSetti
   lines.push(`Tried: ${methodList(row.coverage.methodsAttempted)}`)
   lines.push(`Not tried: ${methodList(row.coverage.methodsNotAttempted)}`)
 
-  if (followUp?.reason != null) lines.push(`Reason: ${followUp.reason}`)
+  if (followUp !== null && followUp.reason !== null) lines.push(`Reason: ${followUp.reason}`)
   if (followUp !== null) {
     lines.push(`Due: ${formatRelative(effectiveDueAt(followUp))}`)
   }
@@ -89,7 +89,7 @@ export function composeAppointmentReminder(row: CustomerRow, _settings: UserSett
     row.customer.fullName,
     followUp === null ? '' : `When: ${formatRelative(effectiveDueAt(followUp))}`,
     row.primaryVehicle === null ? '' : `Unit: ${describeUnit(row)}`,
-    followUp?.reason == null ? '' : `Notes: ${followUp.reason}`,
+    followUp === null || followUp.reason === null ? '' : `Notes: ${followUp.reason}`,
     '',
     'Reply CONFIRMED, TEXTED, or SNOOZE 2 HOURS',
   ].filter((line) => line !== '')
