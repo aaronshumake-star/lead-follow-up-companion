@@ -197,6 +197,126 @@ export const LEAD_PRIORITY_LABELS: Record<LeadPriority, string> = {
   low: 'Low',
 }
 
+export const ACTIVITY_TYPE_LABELS: Record<ActivityType, string> = {
+  outbound_call: 'Outbound call',
+  inbound_call: 'Inbound call',
+  outbound_text: 'Outbound text',
+  inbound_text: 'Inbound text',
+  outbound_email: 'Outbound email',
+  inbound_email: 'Inbound email',
+  voicemail_left: 'Voicemail left',
+  voicemail_received: 'Voicemail received',
+  whatsapp_message: 'WhatsApp message',
+  in_person: 'In person',
+  appointment: 'Appointment',
+  note: 'Internal note',
+  status_change: 'Status change',
+  follow_up_completed: 'Follow-up completed',
+  screenshot_import: 'Screenshot import',
+}
+
+export const ACTIVITY_OUTCOME_LABELS: Record<ActivityOutcome, string> = {
+  connected: 'Answered',
+  no_answer: 'No answer',
+  left_voicemail: 'Voicemail',
+  busy: 'Busy',
+  bad_number: 'Bad number',
+  wrong_number: 'Wrong number',
+  replied: 'Replied',
+  no_reply: 'No reply',
+  appointment_set: 'Appointment set',
+  appointment_kept: 'Appointment kept',
+  appointment_missed: 'Appointment missed',
+  not_interested: 'Not interested',
+  sold: 'Sold',
+  other: 'Unknown',
+}
+
+export const ACTIVITY_DIRECTION_LABELS: Record<ActivityDirection, string> = {
+  outbound: 'Outbound',
+  inbound: 'Inbound',
+  internal: 'Internal',
+}
+
+export const LEAD_TEMPERATURE_LABELS: Record<LeadTemperature, string> = {
+  hot: 'Hot',
+  warm: 'Warm',
+  cold: 'Cold',
+  unknown: 'Unknown',
+}
+
+export const PREFERRED_LANGUAGE_LABELS: Record<PreferredLanguage, string> = {
+  en: 'English',
+  es: 'Spanish',
+  other: 'Other',
+  unknown: 'Unknown',
+}
+
+export const VEHICLE_CONDITION_LABELS: Record<VehicleCondition, string> = {
+  new: 'New',
+  used: 'Used',
+  unknown: 'Unknown',
+}
+
+export const RECORD_SOURCE_LABELS: Record<RecordSource, string> = {
+  manual: 'Entered by me',
+  screenshot: 'From a screenshot',
+  whatsapp: 'From WhatsApp',
+  voice_note: 'From a voice note',
+  seed: 'Demo data',
+  system: 'System',
+}
+
+/**
+ * The direction the database requires for a given activity type, mirroring the
+ * activities_direction_matches_type check constraint. Types absent from this
+ * map accept any direction, so the caller chooses.
+ */
+const REQUIRED_DIRECTIONS: Partial<Record<ActivityType, ActivityDirection>> = {
+  outbound_call: 'outbound',
+  outbound_text: 'outbound',
+  outbound_email: 'outbound',
+  voicemail_left: 'outbound',
+  inbound_call: 'inbound',
+  inbound_text: 'inbound',
+  inbound_email: 'inbound',
+  voicemail_received: 'inbound',
+  note: 'internal',
+  status_change: 'internal',
+  follow_up_completed: 'internal',
+  screenshot_import: 'internal',
+}
+
+/**
+ * Resolves the direction for an activity type, so the client cannot build a row
+ * the check constraint would reject.
+ */
+export function directionForActivityType(
+  type: ActivityType,
+  fallback: ActivityDirection = 'outbound',
+): ActivityDirection {
+  return REQUIRED_DIRECTIONS[type] ?? fallback
+}
+
+/** The channel an activity type uses, where the type implies one. */
+const IMPLIED_METHODS: Partial<Record<ActivityType, ContactMethod>> = {
+  outbound_call: 'phone_call',
+  inbound_call: 'phone_call',
+  outbound_text: 'sms',
+  inbound_text: 'sms',
+  outbound_email: 'email',
+  inbound_email: 'email',
+  voicemail_left: 'voicemail',
+  voicemail_received: 'voicemail',
+  whatsapp_message: 'whatsapp',
+  in_person: 'in_person',
+  appointment: 'in_person',
+}
+
+export function methodForActivityType(type: ActivityType): ContactMethod | null {
+  return IMPLIED_METHODS[type] ?? null
+}
+
 export function isClosedLeadStatus(status: LeadStatus): boolean {
   return (CLOSED_LEAD_STATUSES as readonly string[]).includes(status)
 }

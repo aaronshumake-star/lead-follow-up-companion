@@ -41,7 +41,14 @@ export interface Customer {
   leadPriority: LeadPriority
   leadTemperature: LeadTemperature
   leadStatus: LeadStatus
+  /** What the customer asked to be contacted by; a preference, not a record. */
+  preferredContactMethod: ContactMethod | null
   notes: string | null
+  /** Surfaced on the card and detail header without the rest of the notes. */
+  pinnedNote: string | null
+  objections: string | null
+  tradeNotes: string | null
+  financeStatus: string | null
   source: RecordSource
   lastActivityAt: IsoTimestamp | null
   archivedAt: IsoTimestamp | null
@@ -108,6 +115,14 @@ export interface FollowUp {
   snoozedUntil: IsoTimestamp | null
   reminderStatus: ReminderStatus
   whatsappMessageId: string | null
+  /** An appointment is a follow-up with a stronger promise attached. */
+  isAppointment: boolean
+  canceledAt: IsoTimestamp | null
+  /** How the previous commitment ended, kept so history is never silent. */
+  outcomeNote: string | null
+  /** Set when this follow-up replaced an earlier one, making the chain walkable. */
+  rescheduledFromId: string | null
+  createdAt: IsoTimestamp
 }
 
 export interface Screenshot {
@@ -169,4 +184,34 @@ export interface Profile {
   monthlyVoiceMinuteBudget: number
   retainScreenshots: boolean
   retainVoiceAudio: boolean
+
+  /** Scheduling preferences; see src/domain/settings.ts for the defaults. */
+  morningAt: string
+  afternoonAt: string
+  noAnswerFollowUpHours: number
+  voicemailFollowUpHours: number
+  textNoReplyFollowUpHours: number
+  emailNoReplyFollowUpHours: number
+  quoteSentFollowUpHours: number
+  waitingTimeoutHours: number
+  defaultLeadPriority: LeadPriority
+  dateTimeDisplay: DateTimeDisplay
+}
+
+export type DateTimeDisplay = 'relative' | 'absolute' | 'both'
+
+/**
+ * An append-only record of a change. Written when an activity is corrected, so
+ * that fixing a mistyped call outcome leaves a trail rather than rewriting
+ * history silently.
+ */
+export interface AuditEntry {
+  id: string
+  action: 'insert' | 'update' | 'delete' | 'access_denied' | 'auth'
+  tableName: string
+  recordId: string | null
+  summary: string | null
+  /** Holds `before`, `after` and an optional `reason`. */
+  metadata: Record<string, unknown>
+  createdAt: IsoTimestamp
 }

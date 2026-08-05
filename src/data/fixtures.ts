@@ -21,6 +21,7 @@ import type {
   VehicleInterest,
 } from '../domain/models.ts'
 import type { AppUser } from '../features/auth/auth-context.ts'
+import { DEFAULT_SETTINGS } from '../domain/settings.ts'
 
 export const DEMO_USER: AppUser = {
   id: '00000000-0000-4000-8000-000000000000',
@@ -66,7 +67,12 @@ function customer(
     leadSource: null,
     leadPriority: 'normal',
     leadTemperature: 'unknown',
+    preferredContactMethod: null,
     notes: null,
+    pinnedNote: null,
+    objections: null,
+    tradeNotes: null,
+    financeStatus: null,
     source: 'seed',
     lastActivityAt: null,
     archivedAt: null,
@@ -91,7 +97,12 @@ export const DEMO_CUSTOMERS: Customer[] = [
     leadPriority: 'high',
     leadTemperature: 'hot',
     leadStatus: 'follow_up_scheduled',
+    preferredContactMethod: 'phone_call',
     notes: 'Wants a bunkhouse travel trailer under 30 feet. Tows with a half-ton.',
+    pinnedNote: 'Speaks Spanish at home — his wife makes the call on the floorplan.',
+    objections: 'Worried the 28BHS is too heavy for his half-ton.',
+    tradeNotes: 'No trade.',
+    financeStatus: 'Pre-approved through his credit union.',
     lastActivityAt: hoursFromNow(-3),
   }),
   customer({
@@ -106,7 +117,10 @@ export const DEMO_CUSTOMERS: Customer[] = [
     leadSource: 'Walk-in',
     leadTemperature: 'warm',
     leadStatus: 'waiting_on_customer',
+    preferredContactMethod: 'email',
     notes: 'Sent trade-in appraisal. Waiting on her to confirm payoff amount.',
+    tradeNotes: 'Trading a 2016 pop-up. Payoff amount still unconfirmed.',
+    financeStatus: 'Waiting on payoff before running numbers.',
     lastActivityAt: daysFromNow(-2),
   }),
   customer({
@@ -489,6 +503,11 @@ function followUp(
     snoozedUntil: null,
     reminderStatus: 'not_scheduled',
     whatsappMessageId: null,
+    isAppointment: false,
+    canceledAt: null,
+    outcomeNote: null,
+    rescheduledFromId: null,
+    createdAt: daysFromNow(-1),
     ...overrides,
   }
 }
@@ -513,9 +532,10 @@ export const DEMO_FOLLOW_UPS: FollowUp[] = [
     dueAt: daysFromNow(2),
     status: 'pending',
     priority: 'urgent',
-    reason: 'Confirm Saturday walkthrough the day before.',
-    recommendedMethod: 'sms',
+    reason: 'Saturday walkthrough for two fifth wheels.',
+    recommendedMethod: 'in_person',
     reminderStatus: 'scheduled',
+    isAppointment: true,
   }),
   // Overdue: exactly the failure this app exists to catch.
   followUp('f-4', 'c-raghunathan', {
@@ -660,7 +680,6 @@ export const DEMO_NOTIFICATIONS: NotificationLogEntry[] = [
 export const DEMO_PROFILE: Profile = {
   id: DEMO_USER.id,
   displayName: 'Demo User',
-  timeZone: 'America/Chicago',
   whatsappNumberE164: null,
   whatsappEnabled: false,
   monthlyMessageBudget: 300,
@@ -669,6 +688,8 @@ export const DEMO_PROFILE: Profile = {
   monthlyVoiceMinuteBudget: 30,
   retainScreenshots: false,
   retainVoiceAudio: false,
+  // Scheduling preferences share their defaults with a real profile row.
+  ...DEFAULT_SETTINGS,
 }
 
 export function activitiesForCustomer(customerId: string): Activity[] {

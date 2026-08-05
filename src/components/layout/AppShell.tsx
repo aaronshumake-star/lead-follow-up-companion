@@ -24,7 +24,8 @@ export function AppShell() {
           role="status"
           className="border-b border-amber-900/60 bg-amber-950/50 px-4 py-2 text-center text-sm text-amber-200"
         >
-          Demo mode — showing fictional data. Connect Supabase to use your own records.
+          Demo mode — these are fictional records stored in this browser only. They are not
+          synchronized and never reach a Supabase project. Connect Supabase to use your own data.
         </div>
       )}
 
