@@ -90,7 +90,15 @@ export function ScreenshotInboxPage() {
         <Card
           className={intake.state.outcome.requiresReview ? 'border-amber-900/70' : 'border-emerald-900/70'}
         >
-          <CardTitle>{`Imported ${intake.state.outcome.customerName ?? 'screenshot'}`}</CardTitle>
+          {/* Never claims an import that did not happen: a review outcome and a
+              duplicate both leave the customer untouched. */}
+          <CardTitle>
+            {intake.state.outcome.customerName !== null
+              ? `Imported ${intake.state.outcome.customerName}`
+              : intake.state.outcome.decision === 'DUPLICATE_IGNORED'
+                ? 'Already imported'
+                : 'Sent to review'}
+          </CardTitle>
 
           <div className="flex flex-wrap items-center gap-2">
             <Badge tone={intake.state.outcome.requiresReview ? 'warn' : 'good'}>
