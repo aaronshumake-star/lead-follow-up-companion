@@ -22,6 +22,7 @@ import type {
   LeadStatus,
 } from '../domain/vocabulary.ts'
 import { DEFAULT_SETTINGS } from '../domain/settings.ts'
+import { normalizeEmail, normalizeName, normalizePhone } from '../lib/normalize.ts'
 
 const DEFAULT_NOW = '2026-08-05T15:00:00.000Z'
 export const TEST_USER_ID = 'user-1'
@@ -30,18 +31,21 @@ export function makeCustomer(
   overrides: Partial<Customer> & { id?: string; leadStatus?: LeadStatus } = {},
 ): Customer {
   const leadStatus = overrides.leadStatus ?? 'working'
+  const fullName = overrides.fullName ?? 'Test Customer'
 
   return {
     id: 'cust-1',
     userId: TEST_USER_ID,
-    fullName: 'Test Customer',
+    fullName,
     firstName: null,
     lastName: null,
-    normalizedName: 'test customer',
+    // Derived the way the generated column does, so a factory-built customer
+    // is matchable by name without every test remembering to set this.
+    normalizedName: normalizeName(fullName),
+    normalizedPhone: normalizePhone(overrides.primaryPhone ?? null),
+    normalizedEmail: normalizeEmail(overrides.primaryEmail ?? null),
     primaryPhone: null,
-    normalizedPhone: null,
     primaryEmail: null,
-    normalizedEmail: null,
     dealershipCustomerId: null,
     city: null,
     state: null,

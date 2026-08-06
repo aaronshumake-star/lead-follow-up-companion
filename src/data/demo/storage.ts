@@ -14,14 +14,22 @@
 import type { WorkspaceSnapshot } from '../workspace.ts'
 import {
   DEMO_ACTIVITIES,
+  DEMO_CLARIFICATION_SESSIONS,
   DEMO_CONTACT_METHODS,
   DEMO_CUSTOMERS,
+  DEMO_EXTRACTION_FIELDS,
   DEMO_FOLLOW_UPS,
+  DEMO_MATCH_CANDIDATES,
+  DEMO_NOTIFICATIONS,
   DEMO_PROFILE,
+  DEMO_SCREENSHOTS,
+  DEMO_USAGE_EVENTS,
   DEMO_VEHICLE_INTERESTS,
 } from '../fixtures.ts'
 
-export const DEMO_STORAGE_KEY = 'lead-follow-up-companion.demo.v1'
+// Bumped for Phase 3: the snapshot gained screenshots, notifications, usage and
+// clarification sessions, so a v1 payload would be missing required arrays.
+export const DEMO_STORAGE_KEY = 'lead-follow-up-companion.demo.v2'
 
 const memoryFallback = new Map<string, string>()
 
@@ -66,6 +74,12 @@ export function createSeedSnapshot(): WorkspaceSnapshot {
     activities: structuredClone(DEMO_ACTIVITIES),
     followUps: structuredClone(DEMO_FOLLOW_UPS),
     auditEntries: [],
+    screenshots: structuredClone(DEMO_SCREENSHOTS),
+    extractionFields: structuredClone(DEMO_EXTRACTION_FIELDS),
+    matchCandidates: structuredClone(DEMO_MATCH_CANDIDATES),
+    notifications: structuredClone(DEMO_NOTIFICATIONS),
+    clarificationSessions: structuredClone(DEMO_CLARIFICATION_SESSIONS),
+    usageEvents: structuredClone(DEMO_USAGE_EVENTS),
   }
 }
 
@@ -99,6 +113,12 @@ export function readSnapshot(): WorkspaceSnapshot {
       activities: parsed.activities ?? [],
       followUps: parsed.followUps ?? [],
       auditEntries: parsed.auditEntries ?? [],
+      screenshots: parsed.screenshots ?? [],
+      extractionFields: parsed.extractionFields ?? [],
+      matchCandidates: parsed.matchCandidates ?? [],
+      notifications: parsed.notifications ?? [],
+      clarificationSessions: parsed.clarificationSessions ?? [],
+      usageEvents: parsed.usageEvents ?? [],
     }
   } catch {
     const seeded = createSeedSnapshot()

@@ -27,18 +27,32 @@ import type { UserSettings } from '../../domain/settings.ts'
 import type {
   ActivityDraft,
   ActivityPatch,
+  ApplyImportInput,
   ContactMethodDraft,
   CustomerDraft,
   CustomerPatch,
   FollowUpPlan,
   FollowUpResolution,
+  ImportOutcome,
   Repository,
+  ResolveReviewInput,
   ScheduleFollowUpInput,
+  SimulatedDispatch,
+  SimulatedInbound,
   VehicleInterestDraft,
   WorkspaceSnapshot,
 } from '../workspace.ts'
 import { clearSnapshot, newId, readSnapshot, writeSnapshot } from './storage.ts'
-import type { Profile } from '../../domain/models.ts'
+import type { Profile, UsageEventKind } from '../../domain/models.ts'
+import type { ImportDecision } from '../../domain/screenshot/decision-engine.ts'
+import { applyCorrections } from '../../domain/screenshot/import-plan.ts'
+import {
+  applyImport,
+  pushAudit,
+  readStoredExtraction,
+  runSimulatedInbound,
+  runSimulatedReminders,
+} from './import-runtime.ts'
 
 export class DemoRepository implements Repository {
   readonly mode = 'demo' as const
@@ -436,6 +450,171 @@ export class DemoRepository implements Repository {
     await this.mutate((snapshot) => {
       Object.assign(snapshot.profile, stripUndefined(patch))
     })
+  }
+
+  // -------------------------------------------------------------------------
+  // Screenshot intake
+  // -------------------------------------------------------------------------
+
+  async findScreenshotByHash(
+    fileHash: string,
+  ): Promise<{ id: string; decision: ImportDecision | null } | null> {
+    const snapshot = readSnapshot()
+    const existing = snapshot.screenshots.find((item) => item.fileHash === fileHash)
+
+    return existing === undefined
+      ? null
+      : { id: existing.id, decision: (existing.decision as ImportDecision | null) ?? null }
+  }
+
+  async applyScreenshotImport(input: ApplyImportInput): Promise<ImportOutcome> {
+    return this.mutate((snapshot) => applyImport(snapshot, input))
+  }
+
+  async resolveScreenshotReview(input: ResolveReviewInput): Promise<ImportOutcome> {
+    return this.mutate((snapshot) => {
+      const screenshot = snapshot.screenshots.find((item) => item.id === input.screenshotId)
+      if (screenshot === undefined) throw new Error('Screenshot not found.')
+
+      const now = input.now ?? new Date()
+
+      if (input.action.kind === 'discard') {
+        screenshot.status = 'discarded'
+        screenshot.reviewResolvedAt = now.toISOString()
+        screenshot.reviewAction = 'discard'
+        screenshot.rawText = null
+        pushAudit(snapshot, 'update', 'screenshots', screenshot.id, 'Screenshot discarded in review', {
+          action: 'discard',
+        })
+
+        return {
+          screenshotId: screenshot.id,
+          decision: 'EXTRACTION_FAILED' as ImportDecision,
+          reason: 'Discarded during review',
+          customerId: null,
+          customerName: null,
+          changes: [{ label: 'Screenshot discarded' }],
+          followUpDueAt: null,
+          requiresReview: false,
+          undoable: false,
+        }
+      }
+
+      // The stored extraction is replayed with the operator's corrections, so
+      // review reuses the same planner an automatic import used.
+      const stored = readStoredExtraction(snapshot, screenshot.id)
+      const corrected = applyCorrections(stored, input.corrections ?? {})
+
+      const targetId =
+        input.action.kind === 'create_new' ? null : (input.action as { customerId: string }).customerId
+
+      const decision: ImportDecision =
+        input.action.kind === 'create_new'
+          ? 'AUTO_CREATE'
+          : input.action.kind === 'select_existing_unverified'
+            ? 'SAVE_WITH_UNVERIFIED_FIELDS'
+            : 'AUTO_UPDATE'
+
+      // "Keep existing fields" applies nothing but the link and closes the item.
+      if (input.action.kind === 'keep_existing_fields') {
+        screenshot.status = 'applied'
+        screenshot.customerId = targetId
+        screenshot.reviewResolvedAt = now.toISOString()
+        screenshot.reviewAction = 'keep_existing_fields'
+        screenshot.rawText = null
+        pushAudit(snapshot, 'update', 'screenshots', screenshot.id, 'Review kept existing fields', {
+          action: 'keep_existing_fields',
+          customerId: targetId,
+        })
+
+        const customer = snapshot.customers.find((item) => item.id === targetId)
+        return {
+          screenshotId: screenshot.id,
+          decision: 'AUTO_UPDATE' as ImportDecision,
+          reason: 'Existing values kept',
+          customerId: targetId,
+          customerName: customer?.fullName ?? null,
+          changes: [{ label: 'No fields changed' }],
+          followUpDueAt: null,
+          requiresReview: false,
+          undoable: false,
+        }
+      }
+
+      const outcome = applyImport(snapshot, {
+        screenshot: {
+          fileHash: screenshot.fileHash,
+          mimeType: screenshot.mimeType,
+          byteSize: screenshot.byteSize,
+          imageWidth: screenshot.imageWidth,
+          imageHeight: screenshot.imageHeight,
+          originalFilename: screenshot.originalFilename,
+        },
+        rawText: screenshot.rawText,
+        extractionProvider: screenshot.extractionProvider ?? 'review',
+        extraction: corrected,
+        decision,
+        decisionReason: 'Resolved in review',
+        targetCustomerId: targetId,
+        candidates: [],
+        unverifiedFields: input.action.kind === 'select_existing_unverified' ? ['review_unverified'] : [],
+        warnings: [],
+        retainImage: false,
+        now,
+        ignoredFields: input.ignoredFields,
+        existingScreenshotId: screenshot.id,
+      })
+
+      screenshot.reviewResolvedAt = now.toISOString()
+      screenshot.reviewAction = input.action.kind
+
+      return outcome
+    })
+  }
+
+  async discardScreenshot(screenshotId: string, reason?: string | null): Promise<void> {
+    await this.mutate((snapshot) => {
+      const screenshot = snapshot.screenshots.find((item) => item.id === screenshotId)
+      if (screenshot === undefined) return
+
+      screenshot.status = 'discarded'
+      screenshot.rawText = null
+      screenshot.reviewResolvedAt = new Date().toISOString()
+      screenshot.reviewAction = 'discard'
+      pushAudit(snapshot, 'delete', 'screenshots', screenshotId, reason ?? 'Screenshot discarded', {})
+    })
+  }
+
+  // -------------------------------------------------------------------------
+  // Cost metering and simulation
+  // -------------------------------------------------------------------------
+
+  async recordUsage(kind: UsageEventKind, quantity = 1, estimatedCostUsd = 0): Promise<void> {
+    await this.mutate((snapshot) => {
+      snapshot.usageEvents.push({
+        id: newId(),
+        kind,
+        quantity,
+        estimatedCostUsd,
+        occurredAt: new Date().toISOString(),
+      })
+    })
+  }
+
+  async simulateReminderRun(now: Date = new Date()): Promise<SimulatedDispatch> {
+    // Reuses the real engine and the real idempotency check; only the transport
+    // is simulated, so a duplicate here is a duplicate in production too.
+    await this.expireWaitingFollowUps(now)
+
+    return this.mutate((snapshot) => runSimulatedReminders(snapshot, now))
+  }
+
+  async simulateInboundMessage(
+    fromE164: string,
+    text: string,
+    now: Date = new Date(),
+  ): Promise<SimulatedInbound> {
+    return this.mutate((snapshot) => runSimulatedInbound(snapshot, fromE164, text, now))
   }
 
   async resetDemoData(): Promise<void> {

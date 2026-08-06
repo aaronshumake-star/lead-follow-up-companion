@@ -22,7 +22,35 @@ Every active customer must be in one of these states:
 An active customer in none of those states appears at the top of the dashboard
 in the **No next action** queue. That queue is the product.
 
-## Status: Phase 2
+## Status: Phase 3
+
+Screenshot intake with on-device OCR, automatic customer matching, the reminder
+engine and WhatsApp text commands are in. Voice notes are Phase 4.
+
+**New in Phase 3:**
+
+- **Screenshot intake** — Ctrl+V paste, drag-drop or file picker; PNG, JPEG and
+  WEBP validated by magic bytes; SHA-256 duplicate detection; preview, progress,
+  cancel and retry
+- **On-device OCR** with Tesseract.js — free, and the image never leaves the
+  device. A deterministic fixture provider backs demo mode and CI
+- **A deterministic decision engine** returning one of seven outcomes, so clear
+  screenshots import automatically and only genuine ambiguity reaches a person
+- **Needs Review queue** with inline OCR correction
+- **Automatic follow-up creation** on import, respecting the one-open-follow-up
+  rule
+- **Reminder engine** — due-now, overdue, waiting deadline, appointment, morning
+  digest and end-of-day digest, dispatched by a Cloudflare Worker on a cron
+- **Notification idempotency** via an atomic claim, so concurrent runs and
+  scheduler retries cannot send twice
+- **WhatsApp Cloud API** provider with webhook verification, signature
+  validation, delivery/read/failure events and duplicate protection
+- **Natural-language text commands**, quick replies, queries and clarification
+  sessions
+- **Measured cost tracking** with a projected annual figure and a warning
+  threshold
+
+## Phase 2
 
 The manual lead tracker is complete and usable, in demo mode and against
 Supabase, before screenshot OCR or WhatsApp exist.
@@ -186,6 +214,9 @@ filename order:
 5. `20260805000500_views.sql` — the derived read models
 6. `20260806000100_phase2_manual_tracker.sql` — Phase 2 columns, per-user
    scheduling settings, and the transactional follow-up functions
+7. `20260807000100_phase3_intake_and_reminders.sql` — screenshot decisions,
+   notification staging and the atomic claim, clarification sessions, usage
+   metering, and the reminder settings
 
 ### 4. Create your user account
 
@@ -223,9 +254,104 @@ banner disappears once Supabase is configured.
 
 ### What you do *not* need to create
 
-- No storage buckets yet — screenshots are not retained by default
-- No Edge Functions yet — they arrive with WhatsApp in Phase 3
-- No database webhooks, no cron jobs, no extensions beyond `pgcrypto`
+- No storage buckets — screenshots are discarded after extraction by default
+- No Supabase Edge Functions — the scheduler and webhook run on a Cloudflare
+  Worker instead
+- No extensions beyond `pgcrypto`
+
+---
+
+## Setting up WhatsApp
+
+WhatsApp is optional to *run* the app — the dashboard works without it — but it
+is the core feature, so this is the full path.
+
+### 1. Create the Meta app
+
+1. Go to [developers.facebook.com](https://developers.facebook.com) → **My Apps**
+   → **Create App** → **Business**
+2. Add the **WhatsApp** product
+3. Under **WhatsApp → API Setup**, note the **Phone number ID** and the
+   **WhatsApp Business Account ID**
+4. Add your own mobile number as a **recipient**. This is the only number the app
+   will ever message
+
+The test number Meta provides is enough for personal use and costs nothing to
+set up.
+
+### 2. Create a permanent access token
+
+The 24-hour token on the API Setup page expires. For the scheduler you need a
+system user token:
+
+1. [business.facebook.com](https://business.facebook.com) → **Business settings**
+   → **Users → System users** → **Add**
+2. Give it the **whatsapp_business_messaging** and
+   **whatsapp_business_management** permissions on your WhatsApp app
+3. **Generate new token**, choose **Never expires**, and copy it once
+
+### 3. Deploy the Worker
+
+```bash
+npx wrangler login
+npx wrangler deploy
+```
+
+Then set each secret (never in `wrangler.toml`, never in `.env`):
+
+```bash
+npx wrangler secret put SUPABASE_URL
+npx wrangler secret put SUPABASE_SERVICE_ROLE_KEY
+npx wrangler secret put WHATSAPP_ACCESS_TOKEN
+npx wrangler secret put WHATSAPP_PHONE_NUMBER_ID
+npx wrangler secret put WHATSAPP_BUSINESS_ACCOUNT_ID
+npx wrangler secret put WHATSAPP_APPROVED_NUMBER      # e.g. +15125550147
+npx wrangler secret put WHATSAPP_WEBHOOK_VERIFY_TOKEN # any random string you invent
+npx wrangler secret put WHATSAPP_APP_SECRET           # App settings → Basic → App secret
+```
+
+`SUPABASE_SERVICE_ROLE_KEY` bypasses Row Level Security. It belongs *only* here.
+
+### 4. Point the webhook at the Worker
+
+1. In the Meta app: **WhatsApp → Configuration → Webhook → Edit**
+2. **Callback URL**: `https://<your-worker>.workers.dev/webhooks/whatsapp`
+3. **Verify token**: the same string you set as `WHATSAPP_WEBHOOK_VERIFY_TOKEN`
+4. Subscribe to the **messages** field
+
+Meta calls the URL with a GET to verify. The Worker answers the challenge only
+when the token matches, and every subsequent POST is rejected unless its
+`X-Hub-Signature-256` header verifies against the app secret.
+
+### 5. Turn it on in the app
+
+Settings → set your approved number and enable WhatsApp notifications. The
+database refuses to enable it without a number, so the two cannot drift apart.
+
+### The scheduler
+
+`wrangler.toml` sets a cron of `*/15 * * * *`. Each run expires lapsed waiting
+deadlines, plans reminders, claims each one against a unique key, and sends only
+what it claimed. Roughly 2,900 invocations a month against a free allowance of
+100,000 a day.
+
+To trigger a run by hand, set an optional `SCHEDULER_TRIGGER_TOKEN` secret and:
+
+```bash
+curl -X POST https://<your-worker>.workers.dev/tasks/reminders \
+  -H "Authorization: Bearer <SCHEDULER_TRIGGER_TOKEN>"
+```
+
+Without that secret the endpoint is closed, so it cannot be left open by
+accident.
+
+### Testing without credentials
+
+Demo mode ships a simulated transport and a deterministic OCR fixture. On the
+WhatsApp page you can run a reminder cycle, watch the second run suppress every
+message as a duplicate, send text commands from the approved number, and send
+one from an unknown number to see it refused. Nothing reaches WhatsApp and
+nothing costs anything.
 
 ---
 
@@ -382,9 +508,8 @@ first.
 | --- | --- |
 | 1 ✅ | Foundation: schema, RLS, auth, shell, provider interfaces |
 | 2 ✅ | Manual lead tracker: customers, activities, follow-ups, dashboard, search |
-| 3 | WhatsApp: reminders, digests, text replies, the signed webhook, scheduler |
-| 4 | Screenshot extraction with Tesseract.js and a review step |
-| 5 | Voice-note commands, off by default |
+| 3 ✅ | Screenshot OCR, automatic matching, reminders, WhatsApp text commands |
+| 4 | Voice-note commands, off by default |
 
 ## License
 

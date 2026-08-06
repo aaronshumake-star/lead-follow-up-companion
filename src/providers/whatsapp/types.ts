@@ -52,6 +52,14 @@ export interface InboundWhatsAppMessage {
   audio?: { mediaId: string; mimeType: string; durationSeconds?: number }
 }
 
+/**
+ * The messaging transport.
+ *
+ * `send` is the text send the brief calls sendText; `verifyWebhook` and
+ * `markAsRead` are optional because not every provider supports them, and a
+ * transport that cannot verify a signature must still be usable for outbound
+ * reminders rather than blocking the feature entirely.
+ */
 export interface WhatsAppProvider {
   readonly info: ProviderInfo
   send(message: OutboundWhatsAppMessage): Promise<ProviderResult<SendResult>>
@@ -60,8 +68,11 @@ export interface WhatsAppProvider {
    * Payloads are untrusted until this succeeds.
    */
   parseWebhook(payload: unknown, signature: string | null): ProviderResult<InboundWhatsAppMessage[]>
-  /** Downloads voice-note audio for transcription. */
+  /** Downloads voice-note audio for transcription. Arrives with Phase 4. */
   fetchMedia(mediaId: string): Promise<ProviderResult<Blob>>
+  /** Confirms a raw request body against the provider's signature scheme. */
+  verifyWebhook?(rawBody: string, signatureHeader: string | null): Promise<boolean>
+  markAsRead?(providerMessageId: string): Promise<void>
 }
 
 /**

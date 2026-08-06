@@ -14,12 +14,21 @@
 import type {
   Activity,
   AuditEntry,
+  ClarificationSession,
   Customer,
   CustomerContactMethod,
   FollowUp,
+  NotificationLogEntry,
   Profile,
+  Screenshot,
+  ScreenshotExtractionField,
+  UsageEvent,
   VehicleInterest,
 } from '../domain/models.ts'
+import type { ExtractionResult } from '../domain/screenshot/extraction.ts'
+import type { ImportDecision } from '../domain/screenshot/decision-engine.ts'
+import type { MatchCandidate } from '../domain/screenshot/matching.ts'
+import type { ReminderStage, UsageEventKind } from '../domain/models.ts'
 import type {
   ActivityDirection,
   ActivityOutcome,
@@ -43,6 +52,22 @@ export interface WorkspaceSnapshot {
   followUps: FollowUp[]
   /** Recent audit entries, used to mark corrected activities in the timeline. */
   auditEntries: AuditEntry[]
+  screenshots: Screenshot[]
+  extractionFields: ScreenshotExtractionField[]
+  matchCandidates: StoredMatchCandidate[]
+  notifications: NotificationLogEntry[]
+  clarificationSessions: ClarificationSession[]
+  usageEvents: UsageEvent[]
+}
+
+export interface StoredMatchCandidate {
+  id: string
+  screenshotId: string
+  customerId: string
+  score: number
+  reasons: string[]
+  conflicts: Array<{ field: string; existing: string; incoming: string }>
+  selected: boolean
 }
 
 export type StorageMode = 'demo' | 'supabase'
@@ -219,6 +244,132 @@ export interface Repository {
   updateSettings(patch: Partial<UserSettings>): Promise<void>
   updateProfile(patch: Partial<Pick<Profile, 'displayName'>>): Promise<void>
 
+  // -------------------------------------------------------------------------
+  // Screenshot intake
+  // -------------------------------------------------------------------------
+
+  /** True when this exact image has already been processed. */
+  findScreenshotByHash(fileHash: string): Promise<{ id: string; decision: ImportDecision | null } | null>
+  /**
+   * Records the capture, applies the decision, and returns what changed.
+   * One call so a decision can never be recorded without its writes.
+   */
+  applyScreenshotImport(input: ApplyImportInput): Promise<ImportOutcome>
+  /** Resolves a screenshot sitting in the review queue. */
+  resolveScreenshotReview(input: ResolveReviewInput): Promise<ImportOutcome>
+  discardScreenshot(screenshotId: string, reason?: string | null): Promise<void>
+
+  // -------------------------------------------------------------------------
+  // Messaging and cost
+  // -------------------------------------------------------------------------
+
+  recordUsage(kind: UsageEventKind, quantity?: number, estimatedCostUsd?: number): Promise<void>
+
+  /**
+   * Demo mode only: drives the simulated reminder and inbound-command surfaces
+   * on the WhatsApp page. Absent against Supabase, where the worker owns both.
+   */
+  simulateReminderRun?(now?: Date): Promise<SimulatedDispatch>
+  simulateInboundMessage?(fromE164: string, text: string, now?: Date): Promise<SimulatedInbound>
+
   /** Demo mode only: discards local records and reloads the fixtures. */
   resetDemoData?(): Promise<void>
+}
+
+// ---------------------------------------------------------------------------
+// Screenshot import
+// ---------------------------------------------------------------------------
+
+export interface ScreenshotIntakeMetadata {
+  fileHash: string
+  mimeType: string
+  byteSize: number
+  imageWidth: number | null
+  imageHeight: number | null
+  /** Already sanitised; never used to build a filesystem path. */
+  originalFilename: string | null
+  capturedAt?: string | null
+}
+
+export interface ApplyImportInput {
+  screenshot: ScreenshotIntakeMetadata
+  /** Untrusted OCR text, kept only while the capture is unresolved. */
+  rawText: string | null
+  extractionProvider: string
+  extraction: ExtractionResult | null
+  decision: ImportDecision
+  decisionReason: string
+  /** For AUTO_UPDATE and SAVE_WITH_UNVERIFIED_FIELDS. */
+  targetCustomerId: string | null
+  candidates: readonly MatchCandidate[]
+  unverifiedFields: readonly string[]
+  warnings: readonly string[]
+  /** Retention is opt-in; otherwise only the hash and text survive. */
+  retainImage: boolean
+  now?: Date
+}
+
+export interface ImportChange {
+  /** Short, human-readable line for the compact import summary. */
+  label: string
+  detail?: string
+}
+
+export interface ImportOutcome {
+  screenshotId: string
+  decision: ImportDecision
+  reason: string
+  customerId: string | null
+  customerName: string | null
+  changes: ImportChange[]
+  /** Set when a follow-up was created, so the summary can name the time. */
+  followUpDueAt: string | null
+  requiresReview: boolean
+  /** True when the import can be rolled back safely. */
+  undoable: boolean
+}
+
+export type ReviewAction =
+  | { kind: 'create_new' }
+  | { kind: 'select_existing'; customerId: string }
+  /** Applies the extraction but marks the uncertain fields unverified. */
+  | { kind: 'select_existing_unverified'; customerId: string }
+  | { kind: 'keep_existing_fields'; customerId: string }
+  | { kind: 'discard' }
+
+export interface ResolveReviewInput {
+  screenshotId: string
+  action: ReviewAction
+  /** Field keys the operator chose to drop before applying. */
+  ignoredFields?: readonly string[]
+  /** Corrections typed over the OCR result before applying. */
+  corrections?: Partial<{
+    fullName: string | null
+    phone: string | null
+    email: string | null
+    customerId: string | null
+    city: string | null
+    state: string | null
+  }>
+  now?: Date
+}
+
+// ---------------------------------------------------------------------------
+// Demo simulation
+// ---------------------------------------------------------------------------
+
+export interface SimulatedDispatch {
+  /** Messages actually sent on this run. */
+  sent: Array<{ stage: ReminderStage; body: string; idempotencyKey: string }>
+  /** Messages skipped because an identical one had already been claimed. */
+  suppressed: Array<{ stage: ReminderStage; idempotencyKey: string; reason: string }>
+  expiredWaiting: number
+}
+
+export interface SimulatedInbound {
+  accepted: boolean
+  /** The reply the app would send back. Empty when the sender was rejected. */
+  reply: string
+  /** Present when the sender was not the approved number. */
+  rejectionReason?: string
 }

@@ -170,6 +170,164 @@ export function SettingsPage() {
         </div>
       </Card>
 
+      <Card>
+        <CardTitle hint="Applies to every screenshot pasted into the inbox.">
+          Screenshot intake
+        </CardTitle>
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <SelectField
+            label="Automatic import"
+            value={draft.autoImportEnabled ? 'on' : 'off'}
+            onChange={(event) => set('autoImportEnabled', event.target.value === 'on')}
+            options={[
+              { value: 'on', label: 'On — write when identity is clear' },
+              { value: 'off', label: 'Off — review everything' },
+            ]}
+            hint="Off sends every capture to the review queue."
+          />
+          <SelectField
+            label="Follow-up on import"
+            value={draft.autoFollowUpOnImport ? 'on' : 'off'}
+            onChange={(event) => set('autoFollowUpOnImport', event.target.value === 'on')}
+            options={[
+              { value: 'on', label: 'On' },
+              { value: 'off', label: 'Off' },
+            ]}
+            hint="Gives an imported lead a next action."
+          />
+          <TextField
+            label="Same-day cutoff hour"
+            type="number"
+            min={0}
+            max={23}
+            value={String(draft.newLeadSameDayCutoffHour)}
+            onChange={(event) =>
+              set('newLeadSameDayCutoffHour', Number.parseInt(event.target.value, 10))
+            }
+            hint="A lead before this hour is followed up today"
+            error={errors.newLeadSameDayCutoffHour}
+          />
+          <TextField
+            label="Same-day delay"
+            type="number"
+            min={1}
+            max={12}
+            value={String(draft.sameDayFollowUpDelayHours)}
+            onChange={(event) =>
+              set('sameDayFollowUpDelayHours', Number.parseInt(event.target.value, 10))
+            }
+            hint="Hours ahead for a same-day follow-up"
+            error={errors.sameDayFollowUpDelayHours}
+          />
+        </div>
+      </Card>
+
+      <Card>
+        <CardTitle hint="WhatsApp is the delivery surface. Turning it off leaves the dashboard, which always works.">
+          Reminders and digests
+        </CardTitle>
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <SelectField
+            label="Reminders"
+            value={draft.remindersEnabled ? 'on' : 'off'}
+            onChange={(event) => set('remindersEnabled', event.target.value === 'on')}
+            options={[
+              { value: 'on', label: 'On' },
+              { value: 'off', label: 'Off' },
+            ]}
+          />
+          <SelectField
+            label="Individual reminders"
+            value={draft.individualRemindersEnabled ? 'on' : 'off'}
+            onChange={(event) => set('individualRemindersEnabled', event.target.value === 'on')}
+            options={[
+              { value: 'on', label: 'On — one per follow-up' },
+              { value: 'off', label: 'Off — digests only' },
+            ]}
+          />
+          <SelectField
+            label="Digest-only mode"
+            value={draft.digestOnly ? 'on' : 'off'}
+            onChange={(event) => set('digestOnly', event.target.value === 'on')}
+            options={[
+              { value: 'off', label: 'Off' },
+              { value: 'on', label: 'On — cheapest' },
+            ]}
+            hint="Collapses everything into the daily digests."
+          />
+          <SelectField
+            label="Morning digest"
+            value={draft.morningDigestEnabled ? 'on' : 'off'}
+            onChange={(event) => set('morningDigestEnabled', event.target.value === 'on')}
+            options={[
+              { value: 'on', label: 'On' },
+              { value: 'off', label: 'Off' },
+            ]}
+            hint={`Sends around ${draft.morningAt}`}
+          />
+          <SelectField
+            label="End-of-day digest"
+            value={draft.endOfDayDigestEnabled ? 'on' : 'off'}
+            onChange={(event) => set('endOfDayDigestEnabled', event.target.value === 'on')}
+            options={[
+              { value: 'on', label: 'On' },
+              { value: 'off', label: 'Off' },
+            ]}
+          />
+          <TextField
+            label="End-of-day digest time"
+            type="time"
+            value={draft.endOfDayDigestAt}
+            onChange={(event) => set('endOfDayDigestAt', event.target.value)}
+            error={errors.endOfDayDigestAt}
+          />
+          <TextField
+            label="Appointment reminder lead"
+            type="number"
+            min={1}
+            max={168}
+            value={String(draft.appointmentReminderLeadHours)}
+            onChange={(event) =>
+              set('appointmentReminderLeadHours', Number.parseInt(event.target.value, 10))
+            }
+            hint="Hours before the appointment"
+            error={errors.appointmentReminderLeadHours}
+          />
+          <TextField
+            label="Overdue reminder interval"
+            type="number"
+            min={1}
+            max={720}
+            value={String(draft.overdueReminderIntervalHours)}
+            onChange={(event) =>
+              set('overdueReminderIntervalHours', Number.parseInt(event.target.value, 10))
+            }
+            hint="Hours between chases for the same lead"
+            error={errors.overdueReminderIntervalHours}
+          />
+          <TextField
+            label="Retry attempts"
+            type="number"
+            min={1}
+            max={3}
+            value={String(draft.reminderMaxAttempts)}
+            onChange={(event) => set('reminderMaxAttempts', Number.parseInt(event.target.value, 10))}
+            hint="Capped at 3 so an outage cannot bill in a loop"
+            error={errors.reminderMaxAttempts}
+          />
+          <TextField
+            label="Annual cost threshold (USD)"
+            type="number"
+            min={0}
+            max={10000}
+            value={String(draft.annualCostThresholdUsd)}
+            onChange={(event) => set('annualCostThresholdUsd', Number(event.target.value))}
+            hint="Warns when the projection approaches this"
+            error={errors.annualCostThresholdUsd}
+          />
+        </div>
+      </Card>
+
       {mode === 'demo' && (
         <Card className="border-amber-900/60 bg-amber-950/20">
           <CardTitle hint="Demo records live in this browser only and are never sent anywhere.">
