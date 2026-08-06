@@ -1,0 +1,33 @@
+@import 'tailwindcss';
+
+/*
+ * Dark by default: this app sits in a browser tab next to the dealership CRM
+ * all day, so it is tuned for long sessions rather than for first impressions.
+ */
+@theme {
+  --color-surface: oklch(0.19 0.02 258);
+  --color-surface-raised: oklch(0.24 0.02 258);
+  --color-surface-border: oklch(0.32 0.02 258);
+  --font-sans:
+    ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+}
+
+@layer base {
+  html {
+    color-scheme: dark;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    margin: 0;
+    min-height: 100dvh;
+    font-family: var(--font-sans);
+    text-rendering: optimizeLegibility;
+  }
+
+  /* Keyboard focus must stay obvious: this is a keyboard-heavy workflow. */
+  :focus-visible {
+    outline: 2px solid var(--color-sky-400);
+    outline-offset: 2px;
+  }
+}

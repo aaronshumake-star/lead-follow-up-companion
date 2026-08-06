@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Lead Follow-Up Companion">
+  <rect width="512" height="512" rx="112" fill="#0f172a" />
+  <path
+    d="M112 300h288"
+    stroke="#1e293b"
+    stroke-width="20"
+    stroke-linecap="round"
+  />
+  <path
+    d="M144 196h224a24 24 0 0 1 24 24v128a24 24 0 0 1-24 24H144a24 24 0 0 1-24-24V220a24 24 0 0 1 24-24Z"
+    fill="#0ea5e9"
+  />
+  <path d="M120 236h272" stroke="#082f49" stroke-width="16" />
+  <circle cx="184" cy="384" r="30" fill="#e2e8f0" />
+  <circle cx="184" cy="384" r="13" fill="#0f172a" />
+  <circle cx="336" cy="384" r="30" fill="#e2e8f0" />
+  <circle cx="336" cy="384" r="13" fill="#0f172a" />
+  <path
+    d="M256 60v96m0 0-40-40m40 40 40-40"
+    stroke="#38bdf8"
+    stroke-width="26"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    fill="none"
+  />
+</svg>
