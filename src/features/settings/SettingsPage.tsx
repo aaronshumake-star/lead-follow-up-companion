@@ -1,59 +1,347 @@
+import { useEffect, useState } from 'react'
 import { PageHeader } from '../../components/ui/PageHeader.tsx'
 import { Card, CardTitle } from '../../components/ui/Card.tsx'
 import { Badge } from '../../components/ui/Badge.tsx'
-import { PhaseNotice } from '../../components/ui/PhaseNotice.tsx'
-import { DEMO_PROFILE } from '../../data/fixtures.ts'
+import { Button } from '../../components/ui/Button.tsx'
+import { ConfirmDialog } from '../../components/ui/ConfirmDialog.tsx'
+import { ErrorState, LoadingState } from '../../components/ui/States.tsx'
+import { SelectField, TextField } from '../../components/ui/Field.tsx'
+import { useToast } from '../../components/ui/useToast.ts'
+import { useWorkspace } from '../../data/useWorkspace.ts'
 import { describeProviders } from '../../providers/registry.ts'
 import { isDemoMode, isSupabaseConfigured } from '../../config/env.ts'
+import { DEFAULT_SETTINGS, validateSettings, type UserSettings } from '../../domain/settings.ts'
+import { LEAD_PRIORITIES, LEAD_PRIORITY_LABELS } from '../../domain/vocabulary.ts'
+import type { LeadPriority } from '../../domain/vocabulary.ts'
+import type { DateTimeDisplay } from '../../domain/models.ts'
+
+/**
+ * Common IANA zones for the dealership's region. Any other zone can still be
+ * typed, and validateSettings rejects one the runtime does not recognise.
+ */
+const TIME_ZONES = [
+  'America/Chicago',
+  'America/New_York',
+  'America/Denver',
+  'America/Phoenix',
+  'America/Los_Angeles',
+  'America/Anchorage',
+  'Pacific/Honolulu',
+  'UTC',
+]
+
+const HOUR_FIELDS: Array<{ key: keyof UserSettings; label: string; hint: string }> = [
+  { key: 'noAnswerFollowUpHours', label: 'Call with no answer', hint: 'Hours until the retry is due' },
+  { key: 'voicemailFollowUpHours', label: 'Voicemail left', hint: 'Hours before chasing again' },
+  { key: 'textNoReplyFollowUpHours', label: 'Text with no reply', hint: 'Hours before following up' },
+  { key: 'emailNoReplyFollowUpHours', label: 'Email with no reply', hint: 'Hours before following up' },
+  { key: 'quoteSentFollowUpHours', label: 'Quote sent', hint: 'Hours before checking back' },
+  {
+    key: 'waitingTimeoutHours',
+    label: 'Waiting for customer',
+    hint: 'Hours before the lead returns to Action required',
+  },
+]
 
 export function SettingsPage() {
-  const providers = describeProviders()
+  const { status, error, settings, snapshot, mode, run, refresh, repository } = useWorkspace()
+  const { notify } = useToast()
 
-  const toggles: Array<{ label: string; enabled: boolean; note: string }> = [
-    {
-      label: 'WhatsApp notifications',
-      enabled: DEMO_PROFILE.whatsappEnabled,
-      note: 'Requires an approved number. Turning this off leaves the dashboard as the only surface.',
-    },
-    {
-      label: 'Paid AI screenshot extraction',
-      enabled: DEMO_PROFILE.aiExtractionEnabled,
-      note: 'Off by default. Free in-browser OCR is used unless this is switched on.',
-    },
-    {
-      label: 'Voice transcription',
-      enabled: DEMO_PROFILE.voiceTranscriptionEnabled,
-      note: 'Off by default. Billed per second of audio, so it stays off until needed.',
-    },
-    {
-      label: 'Keep screenshots after extraction',
-      enabled: DEMO_PROFILE.retainScreenshots,
-      note: 'Off by default. Only the hash and extracted text are kept, which uses no storage quota.',
-    },
-    {
-      label: 'Keep voice audio after transcription',
-      enabled: DEMO_PROFILE.retainVoiceAudio,
-      note: 'Off by default. Audio is deleted as soon as a transcript exists.',
-    },
-  ]
+  const [draft, setDraft] = useState<UserSettings>(settings)
+  const [errors, setErrors] = useState<Partial<Record<keyof UserSettings, string>>>({})
+  const [saving, setSaving] = useState(false)
+  const [confirmingReset, setConfirmingReset] = useState(false)
+
+  // Reset the form whenever the stored settings change under it.
+  useEffect(() => setDraft(settings), [settings])
+
+  if (status === 'loading') return <LoadingState label="Loading settings…" />
+  if (status === 'error') {
+    return <ErrorState message={error ?? 'Could not load settings.'} onRetry={() => void refresh()} />
+  }
+
+  const providers = describeProviders()
+  const profile = snapshot?.profile
+
+  function set<K extends keyof UserSettings>(key: K, value: UserSettings[K]) {
+    setDraft((current) => ({ ...current, [key]: value }))
+  }
+
+  async function save() {
+    const result = validateSettings(draft, settings)
+    setErrors(result.errors)
+
+    if (Object.keys(result.errors).length > 0) {
+      notify('error', 'Some settings were not valid and kept their previous values.')
+      setDraft(result.settings)
+      return
+    }
+
+    setSaving(true)
+    try {
+      await run((repo) => repo.updateSettings(result.settings))
+      notify('success', 'Settings saved.')
+    } catch (cause) {
+      notify('error', cause instanceof Error ? cause.message : 'Could not save your settings.')
+    } finally {
+      setSaving(false)
+    }
+  }
 
   return (
     <div className="space-y-6">
       <PageHeader
         title="Settings"
-        description="Provider wiring and the switches that decide whether this app can cost anything."
+        description="Scheduling defaults, provider wiring, and the switches that decide whether this app can cost anything."
+        actions={
+          <Button variant="primary" disabled={saving} onClick={() => void save()}>
+            {saving ? 'Saving…' : 'Save settings'}
+          </Button>
+        }
       />
 
-      <PhaseNotice
-        phase="Phase 1"
-        summary="Values shown are read-only defaults. Editing arrives with the profile screen."
-        planned={[
-          'Approved WhatsApp number with a verification step',
-          'Morning summary, overdue summary and quiet-hours times',
-          'Monthly message and voice budgets with usage against them',
-          'Retention switches for screenshots and voice audio',
-        ]}
-      />
+      <Card>
+        <CardTitle hint="Follow-up times are resolved in this zone, not the browser's.">
+          Time and display
+        </CardTitle>
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <SelectField
+            label="Time zone"
+            value={TIME_ZONES.includes(draft.timeZone) ? draft.timeZone : TIME_ZONES[0]}
+            onChange={(event) => set('timeZone', event.target.value)}
+            options={TIME_ZONES.map((zone) => ({ value: zone, label: zone }))}
+            error={errors.timeZone}
+          />
+          <TextField
+            label="Morning time"
+            type="time"
+            value={draft.morningAt}
+            onChange={(event) => set('morningAt', event.target.value)}
+            hint='Used by "tomorrow morning"'
+            error={errors.morningAt}
+          />
+          <TextField
+            label="Afternoon time"
+            type="time"
+            value={draft.afternoonAt}
+            onChange={(event) => set('afternoonAt', event.target.value)}
+            hint='Used by "tomorrow afternoon"'
+            error={errors.afternoonAt}
+          />
+          <SelectField
+            label="Date and time display"
+            value={draft.dateTimeDisplay}
+            onChange={(event) => set('dateTimeDisplay', event.target.value as DateTimeDisplay)}
+            options={[
+              { value: 'relative', label: 'Relative (in 3 hours)' },
+              { value: 'absolute', label: 'Absolute (Aug 6, 10:00 AM)' },
+              { value: 'both', label: 'Both' },
+            ]}
+          />
+        </div>
+      </Card>
+
+      <Card>
+        <CardTitle hint="Every quick action uses these, so changing one changes the whole workflow.">
+          Follow-up defaults
+        </CardTitle>
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {HOUR_FIELDS.map((field) => (
+            <TextField
+              key={String(field.key)}
+              label={field.label}
+              type="number"
+              min={1}
+              max={8760}
+              value={String(draft[field.key])}
+              onChange={(event) =>
+                set(field.key, Number.parseInt(event.target.value, 10) as UserSettings[typeof field.key])
+              }
+              hint={field.hint}
+              error={errors[field.key]}
+            />
+          ))}
+          <SelectField
+            label="Default lead priority"
+            value={draft.defaultLeadPriority}
+            onChange={(event) => set('defaultLeadPriority', event.target.value as LeadPriority)}
+            options={LEAD_PRIORITIES.map((value) => ({ value, label: LEAD_PRIORITY_LABELS[value] }))}
+          />
+        </div>
+      </Card>
+
+      <Card>
+        <CardTitle hint="Applies to every screenshot pasted into the inbox.">
+          Screenshot intake
+        </CardTitle>
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <SelectField
+            label="Automatic import"
+            value={draft.autoImportEnabled ? 'on' : 'off'}
+            onChange={(event) => set('autoImportEnabled', event.target.value === 'on')}
+            options={[
+              { value: 'on', label: 'On — write when identity is clear' },
+              { value: 'off', label: 'Off — review everything' },
+            ]}
+            hint="Off sends every capture to the review queue."
+          />
+          <SelectField
+            label="Follow-up on import"
+            value={draft.autoFollowUpOnImport ? 'on' : 'off'}
+            onChange={(event) => set('autoFollowUpOnImport', event.target.value === 'on')}
+            options={[
+              { value: 'on', label: 'On' },
+              { value: 'off', label: 'Off' },
+            ]}
+            hint="Gives an imported lead a next action."
+          />
+          <TextField
+            label="Same-day cutoff hour"
+            type="number"
+            min={0}
+            max={23}
+            value={String(draft.newLeadSameDayCutoffHour)}
+            onChange={(event) =>
+              set('newLeadSameDayCutoffHour', Number.parseInt(event.target.value, 10))
+            }
+            hint="A lead before this hour is followed up today"
+            error={errors.newLeadSameDayCutoffHour}
+          />
+          <TextField
+            label="Same-day delay"
+            type="number"
+            min={1}
+            max={12}
+            value={String(draft.sameDayFollowUpDelayHours)}
+            onChange={(event) =>
+              set('sameDayFollowUpDelayHours', Number.parseInt(event.target.value, 10))
+            }
+            hint="Hours ahead for a same-day follow-up"
+            error={errors.sameDayFollowUpDelayHours}
+          />
+        </div>
+      </Card>
+
+      <Card>
+        <CardTitle hint="WhatsApp is the delivery surface. Turning it off leaves the dashboard, which always works.">
+          Reminders and digests
+        </CardTitle>
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <SelectField
+            label="Reminders"
+            value={draft.remindersEnabled ? 'on' : 'off'}
+            onChange={(event) => set('remindersEnabled', event.target.value === 'on')}
+            options={[
+              { value: 'on', label: 'On' },
+              { value: 'off', label: 'Off' },
+            ]}
+          />
+          <SelectField
+            label="Individual reminders"
+            value={draft.individualRemindersEnabled ? 'on' : 'off'}
+            onChange={(event) => set('individualRemindersEnabled', event.target.value === 'on')}
+            options={[
+              { value: 'on', label: 'On — one per follow-up' },
+              { value: 'off', label: 'Off — digests only' },
+            ]}
+          />
+          <SelectField
+            label="Digest-only mode"
+            value={draft.digestOnly ? 'on' : 'off'}
+            onChange={(event) => set('digestOnly', event.target.value === 'on')}
+            options={[
+              { value: 'off', label: 'Off' },
+              { value: 'on', label: 'On — cheapest' },
+            ]}
+            hint="Collapses everything into the daily digests."
+          />
+          <SelectField
+            label="Morning digest"
+            value={draft.morningDigestEnabled ? 'on' : 'off'}
+            onChange={(event) => set('morningDigestEnabled', event.target.value === 'on')}
+            options={[
+              { value: 'on', label: 'On' },
+              { value: 'off', label: 'Off' },
+            ]}
+            hint={`Sends around ${draft.morningAt}`}
+          />
+          <SelectField
+            label="End-of-day digest"
+            value={draft.endOfDayDigestEnabled ? 'on' : 'off'}
+            onChange={(event) => set('endOfDayDigestEnabled', event.target.value === 'on')}
+            options={[
+              { value: 'on', label: 'On' },
+              { value: 'off', label: 'Off' },
+            ]}
+          />
+          <TextField
+            label="End-of-day digest time"
+            type="time"
+            value={draft.endOfDayDigestAt}
+            onChange={(event) => set('endOfDayDigestAt', event.target.value)}
+            error={errors.endOfDayDigestAt}
+          />
+          <TextField
+            label="Appointment reminder lead"
+            type="number"
+            min={1}
+            max={168}
+            value={String(draft.appointmentReminderLeadHours)}
+            onChange={(event) =>
+              set('appointmentReminderLeadHours', Number.parseInt(event.target.value, 10))
+            }
+            hint="Hours before the appointment"
+            error={errors.appointmentReminderLeadHours}
+          />
+          <TextField
+            label="Overdue reminder interval"
+            type="number"
+            min={1}
+            max={720}
+            value={String(draft.overdueReminderIntervalHours)}
+            onChange={(event) =>
+              set('overdueReminderIntervalHours', Number.parseInt(event.target.value, 10))
+            }
+            hint="Hours between chases for the same lead"
+            error={errors.overdueReminderIntervalHours}
+          />
+          <TextField
+            label="Retry attempts"
+            type="number"
+            min={1}
+            max={3}
+            value={String(draft.reminderMaxAttempts)}
+            onChange={(event) => set('reminderMaxAttempts', Number.parseInt(event.target.value, 10))}
+            hint="Capped at 3 so an outage cannot bill in a loop"
+            error={errors.reminderMaxAttempts}
+          />
+          <TextField
+            label="Annual cost threshold (USD)"
+            type="number"
+            min={0}
+            max={10000}
+            value={String(draft.annualCostThresholdUsd)}
+            onChange={(event) => set('annualCostThresholdUsd', Number(event.target.value))}
+            hint="Warns when the projection approaches this"
+            error={errors.annualCostThresholdUsd}
+          />
+        </div>
+      </Card>
+
+      {mode === 'demo' && (
+        <Card className="border-amber-900/60 bg-amber-950/20">
+          <CardTitle hint="Demo records live in this browser only and are never sent anywhere.">
+            Demo data
+          </CardTitle>
+          <p className="text-sm text-slate-300">
+            You are working with local fictional records. Resetting discards everything you have changed
+            and reloads the original fixtures.
+          </p>
+          <Button className="mt-3" variant="danger" onClick={() => setConfirmingReset(true)}>
+            Reset demo data
+          </Button>
+        </Card>
+      )}
 
       <Card>
         <CardTitle hint="Every external capability sits behind an interface and can be swapped.">
@@ -75,7 +363,33 @@ export function SettingsPage() {
       <Card>
         <CardTitle hint="Anything that can cost money starts switched off.">Cost switches</CardTitle>
         <ul className="divide-y divide-slate-800">
-          {toggles.map((toggle) => (
+          {[
+            {
+              label: 'WhatsApp notifications',
+              enabled: profile?.whatsappEnabled ?? false,
+              note: 'Requires an approved number. Arrives in Phase 3.',
+            },
+            {
+              label: 'Paid AI screenshot extraction',
+              enabled: profile?.aiExtractionEnabled ?? false,
+              note: 'Off by default. Free in-browser OCR is used unless this is switched on.',
+            },
+            {
+              label: 'Voice transcription',
+              enabled: profile?.voiceTranscriptionEnabled ?? false,
+              note: 'Off by default. Billed per second of audio.',
+            },
+            {
+              label: 'Keep screenshots after extraction',
+              enabled: profile?.retainScreenshots ?? false,
+              note: 'Off by default. Only the hash and extracted text are kept.',
+            },
+            {
+              label: 'Keep voice audio after transcription',
+              enabled: profile?.retainVoiceAudio ?? false,
+              note: 'Off by default. Audio is deleted once a transcript exists.',
+            },
+          ].map((toggle) => (
             <li key={toggle.label} className="py-3">
               <div className="flex flex-wrap items-center gap-3">
                 <span className="font-medium text-slate-200">{toggle.label}</span>
@@ -98,18 +412,39 @@ export function SettingsPage() {
           </div>
           <div>
             <dt className="text-slate-400">Data source</dt>
-            <dd className="text-slate-200">{isDemoMode ? 'Fictional fixtures' : 'Your Supabase project'}</dd>
+            <dd className="text-slate-200">
+              {isDemoMode ? 'Local fictional records' : 'Your Supabase project'}
+            </dd>
           </div>
           <div>
-            <dt className="text-slate-400">Time zone</dt>
-            <dd className="text-slate-200">{DEMO_PROFILE.timeZone}</dd>
+            <dt className="text-slate-400">Time zone in use</dt>
+            <dd className="text-slate-200">{settings.timeZone}</dd>
           </div>
           <div>
             <dt className="text-slate-400">Approved WhatsApp number</dt>
-            <dd className="text-slate-200">{DEMO_PROFILE.whatsappNumberE164 ?? 'Not set'}</dd>
+            <dd className="text-slate-200">{profile?.whatsappNumberE164 ?? 'Not set'}</dd>
           </div>
         </dl>
       </Card>
+
+      <ConfirmDialog
+        open={confirmingReset}
+        title="Reset demo data"
+        message="Discard every local demo record and reload the original fictional customers? This cannot be undone."
+        confirmLabel="Reset demo data"
+        onCancel={() => setConfirmingReset(false)}
+        onConfirm={() => {
+          setConfirmingReset(false)
+          void (async () => {
+            await repository.resetDemoData?.()
+            await refresh()
+            notify('success', 'Demo data reset.')
+          })()
+        }}
+      />
     </div>
   )
 }
+
+/** Exported so tests can assert the shipped defaults without duplicating them. */
+export const SETTINGS_DEFAULTS = DEFAULT_SETTINGS

@@ -33,11 +33,21 @@ echo "==> loading seed data"
   -c "insert into auth.users (id, email) values ('99999999-0000-4000-8000-000000000001', 'seed@example.test');"
 "${PSQL[@]}" -d "${DB}" -f supabase/seed.sql
 
-echo "==> running SQL tests"
-psql_output=$("${PSQL[@]}" -d "${DB}" -f supabase/tests/01_rls_and_constraints.sql 2>&1)
-echo "${psql_output}"
+run_suite() {
+  local file="$1"
+  local sentinel="$2"
 
-if ! grep -q 'All database tests passed.' <<<"${psql_output}"; then
-  echo "database tests did not reach the end" >&2
-  exit 1
-fi
+  echo "==> running ${file}"
+  local output
+  output=$("${PSQL[@]}" -d "${DB}" -f "${file}" 2>&1)
+  echo "${output}"
+
+  if ! grep -q "${sentinel}" <<<"${output}"; then
+    echo "database tests in ${file} did not reach the end" >&2
+    exit 1
+  fi
+}
+
+run_suite supabase/tests/01_rls_and_constraints.sql 'All database tests passed.'
+run_suite supabase/tests/02_phase2_follow_up_engine.sql 'All Phase 2 database tests passed.'
+run_suite supabase/tests/03_phase3_intake_and_notifications.sql 'All Phase 3 database tests passed.'

@@ -6,58 +6,19 @@ import {
   sortByUrgency,
   summarizeQueue,
 } from './next-action.ts'
-import type { Customer, FollowUp } from './models.ts'
+import type { FollowUp } from './models.ts'
 import type { FollowUpStatus, LeadStatus } from './vocabulary.ts'
 import { DEMO_CUSTOMERS, followUpsForCustomer } from '../data/fixtures.ts'
+import { makeCustomer as buildCustomer, makeFollowUp as buildFollowUp } from '../test-support/factories.ts'
 
 const NOW = new Date('2026-08-05T15:00:00.000Z')
 
-function makeCustomer(leadStatus: LeadStatus, id = 'cust-1'): Customer {
-  return {
-    id,
-    userId: 'user-1',
-    fullName: 'Test Customer',
-    firstName: null,
-    lastName: null,
-    normalizedName: 'test customer',
-    primaryPhone: null,
-    normalizedPhone: null,
-    primaryEmail: null,
-    normalizedEmail: null,
-    dealershipCustomerId: null,
-    city: null,
-    state: null,
-    preferredLanguage: 'unknown',
-    salesperson: null,
-    leadSource: null,
-    leadPriority: 'normal',
-    leadTemperature: 'unknown',
-    leadStatus,
-    notes: null,
-    source: 'manual',
-    lastActivityAt: null,
-    archivedAt: leadStatus === 'archived' ? NOW.toISOString() : null,
-    createdAt: NOW.toISOString(),
-    updatedAt: NOW.toISOString(),
-  }
+function makeCustomer(leadStatus: LeadStatus, id = 'cust-1') {
+  return buildCustomer({ id, leadStatus })
 }
 
 function makeFollowUp(status: FollowUpStatus, dueAt: string, extra: Partial<FollowUp> = {}): FollowUp {
-  return {
-    id: `fu-${status}-${dueAt}`,
-    customerId: 'cust-1',
-    dueAt,
-    status,
-    priority: 'normal',
-    reason: null,
-    recommendedMethod: null,
-    waitingUntil: null,
-    completedAt: null,
-    snoozedUntil: null,
-    reminderStatus: 'not_scheduled',
-    whatsappMessageId: null,
-    ...extra,
-  }
+  return buildFollowUp({ status, dueAt, completedAt: null, ...extra })
 }
 
 describe('resolveNextAction', () => {

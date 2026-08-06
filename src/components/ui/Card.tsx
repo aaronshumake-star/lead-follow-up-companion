@@ -42,10 +42,12 @@ export function StatTile({
   }[tone]
 
   return (
-    <div className={cn('rounded-xl border p-4', toneClasses)}>
-      <p className="text-3xl font-semibold tabular-nums text-slate-100">{value}</p>
-      <p className="mt-1 text-sm font-medium text-slate-300">{label}</p>
-      {hint !== undefined && <p className="mt-1 text-xs text-slate-500">{hint}</p>}
+    // Compact enough that eight sit side by side on a desktop viewport without
+    // the longer labels forcing the row to overflow.
+    <div className={cn('rounded-xl border px-3 py-3', toneClasses)}>
+      <p className="text-2xl font-semibold tabular-nums text-slate-100">{value}</p>
+      <p className="mt-1 text-sm leading-snug font-medium text-balance text-slate-300">{label}</p>
+      {hint !== undefined && <p className="mt-1 text-xs leading-snug text-slate-500">{hint}</p>}
     </div>
   )
 }

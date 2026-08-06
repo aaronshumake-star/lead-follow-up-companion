@@ -7,13 +7,17 @@
  */
 
 import type { ScreenshotExtractionProvider } from './screenshot-extraction/types.ts'
-import { unconfiguredScreenshotExtractionProvider } from './screenshot-extraction/unconfigured.ts'
+import { createFixtureExtractionProvider } from './screenshot-extraction/fixture.ts'
+import { createTesseractExtractionProvider } from './screenshot-extraction/tesseract.ts'
 import type { WhatsAppProvider } from './whatsapp/types.ts'
 import { unconfiguredWhatsAppProvider } from './whatsapp/unconfigured.ts'
+import { createSimulatedWhatsAppProvider } from './whatsapp/simulated.ts'
+import { isDemoMode } from '../config/env.ts'
+import { DEMO_APPROVED_NUMBER } from '../data/demo/import-runtime.ts'
 import type { VoiceTranscriptionProvider } from './voice-transcription/types.ts'
 import { disabledVoiceTranscriptionProvider } from './voice-transcription/disabled.ts'
 import type { CommandParsingProvider } from './command-parsing/types.ts'
-import { unconfiguredCommandParsingProvider } from './command-parsing/unconfigured.ts'
+import { deterministicCommandParsingProvider } from './command-parsing/deterministic.ts'
 import type { ProviderInfo } from './types.ts'
 
 export interface ProviderRegistry {
@@ -23,11 +27,30 @@ export interface ProviderRegistry {
   commandParsing: CommandParsingProvider
 }
 
+/**
+ * The active providers.
+ *
+ * Screenshot extraction and command parsing are configured from Phase 3
+ * onwards: OCR runs on the device through Tesseract.js (or a deterministic
+ * fixture in demo mode) and commands are parsed by a rule-based parser. Both
+ * are free, which is why `isBillable` stays false.
+ *
+ * WhatsApp is deliberately reported through the placeholder here. The real
+ * Cloud API client is server-only and lives in the Worker, so the browser has
+ * no credentials and genuinely cannot send — which is what this page should
+ * say. Demo mode substitutes the simulated transport.
+ *
+ * Voice transcription stays disabled until Phase 4.
+ */
 export const defaultProviderRegistry: ProviderRegistry = {
-  screenshotExtraction: unconfiguredScreenshotExtractionProvider,
-  whatsapp: unconfiguredWhatsAppProvider,
+  screenshotExtraction: isDemoMode
+    ? createFixtureExtractionProvider()
+    : createTesseractExtractionProvider(),
+  whatsapp: isDemoMode
+    ? createSimulatedWhatsAppProvider(DEMO_APPROVED_NUMBER)
+    : unconfiguredWhatsAppProvider,
   voiceTranscription: disabledVoiceTranscriptionProvider,
-  commandParsing: unconfiguredCommandParsingProvider,
+  commandParsing: deterministicCommandParsingProvider,
 }
 
 export type ProviderSlot = keyof ProviderRegistry

@@ -22,30 +22,65 @@ Every active customer must be in one of these states:
 An active customer in none of those states appears at the top of the dashboard
 in the **No next action** queue. That queue is the product.
 
-## Status: Phase 1
+## Status: Phase 3
 
-Phase 1 is the foundation — schema, security, application shell and the
-interfaces the rest of the system plugs into. The features themselves come next.
+Screenshot intake with on-device OCR, automatic customer matching, the reminder
+engine and WhatsApp text commands are in. Voice notes are Phase 4.
+
+**New in Phase 3:**
+
+- **Screenshot intake** — Ctrl+V paste, drag-drop or file picker; PNG, JPEG and
+  WEBP validated by magic bytes; SHA-256 duplicate detection; preview, progress,
+  cancel and retry
+- **On-device OCR** with Tesseract.js — free, and the image never leaves the
+  device. A deterministic fixture provider backs demo mode and CI
+- **A deterministic decision engine** returning one of seven outcomes, so clear
+  screenshots import automatically and only genuine ambiguity reaches a person
+- **Needs Review queue** with inline OCR correction
+- **Automatic follow-up creation** on import, respecting the one-open-follow-up
+  rule
+- **Reminder engine** — due-now, overdue, waiting deadline, appointment, morning
+  digest and end-of-day digest, dispatched by a Cloudflare Worker on a cron
+- **Notification idempotency** via an atomic claim, so concurrent runs and
+  scheduler retries cannot send twice
+- **WhatsApp Cloud API** provider with webhook verification, signature
+  validation, delivery/read/failure events and duplicate protection
+- **Natural-language text commands**, quick replies, queries and clarification
+  sessions
+- **Measured cost tracking** with a projected annual figure and a warning
+  threshold
+
+## Phase 2
+
+The manual lead tracker is complete and usable, in demo mode and against
+Supabase, before screenshot OCR or WhatsApp exist.
 
 **Built:**
 
 - React 19 + TypeScript + Vite + Tailwind CSS 4, installable as a PWA
 - Supabase authentication with protected routes
-- Complete database schema: 12 tables, 3 views, Row Level Security on every
-  user-owned table
-- Placeholder pages for Dashboard, Customers, Follow-Ups, Screenshot Inbox,
-  WhatsApp and Settings
-- Provider interfaces for screenshot extraction, WhatsApp messaging, voice
-  transcription and command parsing, each with a placeholder that fails closed
-- Normalization utilities shared with the database, fictional seed data, and
-  78 unit tests plus 4 end-to-end tests plus 14 database assertions
+- Database schema: 12 tables, 3 views, Row Level Security on every user-owned
+  table, plus transactional follow-up functions
+- **Dashboard** with eight queues: action required now, overdue, due today, due
+  tomorrow, waiting for customer, no next action, upcoming appointments and
+  recently added
+- **Customers**: create, edit, archive, restore, delete, search across nine
+  fields, nine filters, and conservative duplicate warnings that never merge
+- **Customer detail**: contact coverage, activity timeline with corrections and
+  an audit trail, follow-up history, vehicle interests, structured notes
+- **Activities**: fifteen types, eleven outcomes, quick actions that log and
+  schedule in one click
+- **Follow-up engine**: presets, per-outcome defaults, and transactional
+  replacement that never discards the previous commitment
+- **Waiting for customer** with an enforced response deadline
+- **Settings** stored per user: time zone, morning and afternoon times, and a
+  follow-up interval for each outcome
+- 165 unit tests, 26 database assertions, 14 Playwright tests
 
-**Deliberately not built yet:** the editable lead tracker, real screenshot
-extraction, a live WhatsApp connection, voice transcription.
-
-The dashboard queue logic is real, though — `resolveNextAction` and
-`summarizeContactMethods` are the functions the live version will use, and they
-mirror the corresponding SQL views.
+**Deliberately not built yet:** screenshot extraction, a live WhatsApp
+connection, voice transcription, and the background scheduler. Waiting deadlines
+are evaluated whenever the workspace loads instead; Phase 3 will call the same
+function from a schedule.
 
 ---
 
@@ -74,9 +109,17 @@ npm run dev
 Open http://localhost:5173.
 
 **With no configuration at all, the app boots in demo mode** against fictional
-fixtures. You can click through every page, see the no-next-action queue, and
-check the provider status before creating a Supabase project. Demo mode is on
-whenever `VITE_SUPABASE_URL` is empty, and an amber banner says so.
+fixtures, and the whole tracker works: create customers, log activities,
+schedule and complete follow-ups, mark someone waiting, search and filter.
+
+Demo records are stored in this browser's localStorage only. They are never
+synchronized, never sent anywhere, and never mixed with Supabase records — the
+two backends are selected exclusively. An amber banner says so on every page,
+and Settings has a **Reset demo data** button that reloads the original
+fixtures.
+
+Demo mode is on whenever `VITE_SUPABASE_URL` is empty, or when
+`VITE_DEMO_MODE=true`.
 
 ### 3. Connect your own Supabase project
 
@@ -169,6 +212,11 @@ filename order:
    fields, inbound commands, match candidates, notification log, audit log
 4. `20260805000400_row_level_security.sql` — RLS policies and grants
 5. `20260805000500_views.sql` — the derived read models
+6. `20260806000100_phase2_manual_tracker.sql` — Phase 2 columns, per-user
+   scheduling settings, and the transactional follow-up functions
+7. `20260807000100_phase3_intake_and_reminders.sql` — screenshot decisions,
+   notification staging and the atomic claim, clarification sessions, usage
+   metering, and the reminder settings
 
 ### 4. Create your user account
 
@@ -206,9 +254,104 @@ banner disappears once Supabase is configured.
 
 ### What you do *not* need to create
 
-- No storage buckets yet — screenshots are not retained by default
-- No Edge Functions yet — they arrive with WhatsApp in Phase 3
-- No database webhooks, no cron jobs, no extensions beyond `pgcrypto`
+- No storage buckets — screenshots are discarded after extraction by default
+- No Supabase Edge Functions — the scheduler and webhook run on a Cloudflare
+  Worker instead
+- No extensions beyond `pgcrypto`
+
+---
+
+## Setting up WhatsApp
+
+WhatsApp is optional to *run* the app — the dashboard works without it — but it
+is the core feature, so this is the full path.
+
+### 1. Create the Meta app
+
+1. Go to [developers.facebook.com](https://developers.facebook.com) → **My Apps**
+   → **Create App** → **Business**
+2. Add the **WhatsApp** product
+3. Under **WhatsApp → API Setup**, note the **Phone number ID** and the
+   **WhatsApp Business Account ID**
+4. Add your own mobile number as a **recipient**. This is the only number the app
+   will ever message
+
+The test number Meta provides is enough for personal use and costs nothing to
+set up.
+
+### 2. Create a permanent access token
+
+The 24-hour token on the API Setup page expires. For the scheduler you need a
+system user token:
+
+1. [business.facebook.com](https://business.facebook.com) → **Business settings**
+   → **Users → System users** → **Add**
+2. Give it the **whatsapp_business_messaging** and
+   **whatsapp_business_management** permissions on your WhatsApp app
+3. **Generate new token**, choose **Never expires**, and copy it once
+
+### 3. Deploy the Worker
+
+```bash
+npx wrangler login
+npx wrangler deploy
+```
+
+Then set each secret (never in `wrangler.toml`, never in `.env`):
+
+```bash
+npx wrangler secret put SUPABASE_URL
+npx wrangler secret put SUPABASE_SERVICE_ROLE_KEY
+npx wrangler secret put WHATSAPP_ACCESS_TOKEN
+npx wrangler secret put WHATSAPP_PHONE_NUMBER_ID
+npx wrangler secret put WHATSAPP_BUSINESS_ACCOUNT_ID
+npx wrangler secret put WHATSAPP_APPROVED_NUMBER      # e.g. +15125550147
+npx wrangler secret put WHATSAPP_WEBHOOK_VERIFY_TOKEN # any random string you invent
+npx wrangler secret put WHATSAPP_APP_SECRET           # App settings → Basic → App secret
+```
+
+`SUPABASE_SERVICE_ROLE_KEY` bypasses Row Level Security. It belongs *only* here.
+
+### 4. Point the webhook at the Worker
+
+1. In the Meta app: **WhatsApp → Configuration → Webhook → Edit**
+2. **Callback URL**: `https://<your-worker>.workers.dev/webhooks/whatsapp`
+3. **Verify token**: the same string you set as `WHATSAPP_WEBHOOK_VERIFY_TOKEN`
+4. Subscribe to the **messages** field
+
+Meta calls the URL with a GET to verify. The Worker answers the challenge only
+when the token matches, and every subsequent POST is rejected unless its
+`X-Hub-Signature-256` header verifies against the app secret.
+
+### 5. Turn it on in the app
+
+Settings → set your approved number and enable WhatsApp notifications. The
+database refuses to enable it without a number, so the two cannot drift apart.
+
+### The scheduler
+
+`wrangler.toml` sets a cron of `*/15 * * * *`. Each run expires lapsed waiting
+deadlines, plans reminders, claims each one against a unique key, and sends only
+what it claimed. Roughly 2,900 invocations a month against a free allowance of
+100,000 a day.
+
+To trigger a run by hand, set an optional `SCHEDULER_TRIGGER_TOKEN` secret and:
+
+```bash
+curl -X POST https://<your-worker>.workers.dev/tasks/reminders \
+  -H "Authorization: Bearer <SCHEDULER_TRIGGER_TOKEN>"
+```
+
+Without that secret the endpoint is closed, so it cannot be left open by
+accident.
+
+### Testing without credentials
+
+Demo mode ships a simulated transport and a deterministic OCR fixture. On the
+WhatsApp page you can run a reminder cycle, watch the second run suppress every
+message as a duplicate, send text commands from the approved number, and send
+one from an unknown number to see it refused. Nothing reaches WhatsApp and
+nothing costs anything.
 
 ---
 
@@ -268,7 +411,17 @@ src/
 ├── config/env.ts            Validated client configuration
 ├── domain/                  Vocabulary, models, and the rules
 │   ├── next-action.ts       The no-next-action rule
-│   └── contact-methods.ts   Available vs. attempted-by-me accounting
+│   ├── contact-methods.ts   Available vs. attempted-by-me accounting
+│   ├── dashboard.ts         The eight queues, built in one pass
+│   ├── duplicates.ts        Conservative matching that never merges
+│   ├── follow-up-presets.ts Presets and per-outcome defaults
+│   ├── customer-filters.ts  Search and filtering
+│   └── settings.ts          Per-user scheduling preferences
+├── data/                    Storage, behind one interface
+│   ├── workspace.ts         The repository contract
+│   ├── demo/                Browser-local records for demo mode
+│   ├── supabase/            Live records, through RLS
+│   └── WorkspaceProvider    Loads the working set, refreshes after changes
 ├── providers/               Swappable external services
 │   ├── screenshot-extraction/
 │   ├── whatsapp/
@@ -277,11 +430,14 @@ src/
 │   └── registry.ts          The one file that picks implementations
 ├── features/                One folder per page, plus auth
 ├── components/              Layout and small UI pieces
-├── lib/                     Normalization, untrusted text, formatting, Supabase
-└── data/fixtures.ts         Fictional data mirroring supabase/seed.sql
+└── lib/                     Normalization, untrusted text, time zones, Supabase
 ```
 
-Three ideas hold it together.
+Demo mode and Supabase implement the same `Repository` interface and return the
+same snapshot shape, so every queue, rule and page runs identical code in both.
+That is what makes demo mode a faithful rehearsal rather than a separate app.
+
+Four ideas hold it together.
 
 **The database enforces the product rules.** A partial unique index allows one
 open follow-up per customer, so duplicate reminders are impossible rather than
@@ -301,6 +457,12 @@ score that must clear a threshold.
 showing an automated outbound email does not mean I emailed anyone. Only
 activities with `performed_by_user = true` count as an attempt, which is why a
 customer imported from a screenshot correctly reads as untouched.
+
+**Waiting for customer is never a dead end.** Parking a lead always sets a
+response deadline. When it passes with no reply, the follow-up returns to the
+action queue; when the customer does reply, the waiting state clears and the
+follow-up becomes due immediately so the next decision is asked for rather than
+deferred. Both halves are enforced in SQL as well as in the client.
 
 ---
 
@@ -323,9 +485,12 @@ customer imported from a screenshot correctly reads as untouched.
 - Webhook payloads are rejected unless the signature verifies.
 - No service-role key in client code, at all.
 
-`npm run test:db` proves the isolation rather than asserting it: 14 assertions
+`npm run test:db` proves the isolation rather than asserting it: 26 assertions
 covering cross-user reads, cross-user writes, forged parent references,
-append-only enforcement and the product constraints.
+append-only enforcement and the product constraints. The Phase 2 functions are
+`security invoker`, so they add convenience and never authority — one of the
+assertions confirms that scheduling a follow-up against another user's customer
+is refused, and another confirms the anonymous role still reaches nothing.
 
 ---
 
@@ -342,10 +507,9 @@ first.
 | Phase | Scope |
 | --- | --- |
 | 1 ✅ | Foundation: schema, RLS, auth, shell, provider interfaces |
-| 2 | Lead tracker: create and edit customers, follow-ups, activities, search |
-| 3 | WhatsApp: reminders, digests, text replies, the signed webhook |
-| 4 | Screenshot extraction with Tesseract.js and a review step |
-| 5 | Voice-note commands, off by default |
+| 2 ✅ | Manual lead tracker: customers, activities, follow-ups, dashboard, search |
+| 3 ✅ | Screenshot OCR, automatic matching, reminders, WhatsApp text commands |
+| 4 | Voice-note commands, off by default |
 
 ## License
 
