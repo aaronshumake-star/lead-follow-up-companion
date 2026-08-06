@@ -14,6 +14,8 @@ import { DEFAULT_SETTINGS, validateSettings, type UserSettings } from '../../dom
 import { LEAD_PRIORITIES, LEAD_PRIORITY_LABELS } from '../../domain/vocabulary.ts'
 import type { LeadPriority } from '../../domain/vocabulary.ts'
 import type { DateTimeDisplay } from '../../domain/models.ts'
+import { BackupPrivacySection } from './BackupPrivacySection.tsx'
+import { DiagnosticsSection } from './DiagnosticsSection.tsx'
 
 /**
  * Common IANA zones for the dealership's region. Any other zone can still be
@@ -140,6 +142,9 @@ export function SettingsPage() {
           />
         </div>
       </Card>
+
+      <BackupPrivacySection />
+      <DiagnosticsSection />
 
       <Card>
         <CardTitle hint="Every quick action uses these, so changing one changes the whole workflow.">
@@ -324,6 +329,53 @@ export function SettingsPage() {
             onChange={(event) => set('annualCostThresholdUsd', Number(event.target.value))}
             hint="Warns when the projection approaches this"
             error={errors.annualCostThresholdUsd}
+          />
+        </div>
+      </Card>
+
+      <Card>
+        <CardTitle hint="Paid transcription is disabled by default and requires a server-only key.">
+          Voice Transcription
+        </CardTitle>
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <SelectField
+            label="Voice transcription"
+            value={snapshot?.profile.voiceTranscriptionEnabled === true ? 'on' : 'off'}
+            disabled
+            options={[
+              { value: 'off', label: 'Off — configure Worker secrets first' },
+              { value: 'on', label: 'On' },
+            ]}
+            hint="Never enabled silently. Demo simulation remains free."
+          />
+          <TextField
+            label="Voice messages per day"
+            type="number"
+            min={0}
+            max={100}
+            value={String(draft.voiceMessagesPerDay)}
+            onChange={(event) => set('voiceMessagesPerDay', Number.parseInt(event.target.value, 10))}
+            error={errors.voiceMessagesPerDay}
+          />
+          <TextField
+            label="Confidence threshold"
+            type="number"
+            min={0}
+            max={1}
+            step={0.05}
+            value={String(draft.transcriptionConfidenceThreshold)}
+            onChange={(event) => set('transcriptionConfidenceThreshold', Number(event.target.value))}
+            hint="Below this, ask for typed clarification."
+            error={errors.transcriptionConfidenceThreshold}
+          />
+          <TextField
+            label="Failed-audio retention (hours)"
+            type="number"
+            min={0}
+            max={168}
+            value={String(draft.failedAudioRetentionHours)}
+            onChange={(event) => set('failedAudioRetentionHours', Number.parseInt(event.target.value, 10))}
+            hint="Successful audio is always deleted immediately."
           />
         </div>
       </Card>

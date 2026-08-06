@@ -12,6 +12,7 @@ import { FollowUpsPage } from './features/follow-ups/FollowUpsPage.tsx'
 import { ScreenshotInboxPage } from './features/screenshots/ScreenshotInboxPage.tsx'
 import { WhatsAppPage } from './features/whatsapp/WhatsAppPage.tsx'
 import { SettingsPage } from './features/settings/SettingsPage.tsx'
+import { AppUpdateNotice } from './components/AppUpdateNotice.tsx'
 
 /**
  * Every route except sign-in sits behind RequireAuth. That guard is for
@@ -24,6 +25,7 @@ export function App() {
   return (
     <AuthProvider>
       <ToastProvider>
+        <AppUpdateNotice />
         <Routes>
           <Route path="/sign-in" element={<SignInPage />} />
           <Route

@@ -31,6 +31,13 @@ export const workerEnvSchema = z.object({
 
   /** Shared secret for the manual scheduler trigger, if it is exposed. */
   SCHEDULER_TRIGGER_TOKEN: z.string().min(16).optional(),
+  TRANSCRIPTION_ENABLED: z.enum(['true', 'false']).default('false').transform((value) => value === 'true'),
+  TRANSCRIPTION_API_KEY: z.string().min(20).optional(),
+  TRANSCRIPTION_PROVIDER: z.enum(['openai']).default('openai'),
+  TRANSCRIPTION_MODEL: z.string().min(1).default('whisper-1'),
+  TRANSCRIPTION_MAX_SECONDS: z.coerce.number().int().min(1).max(600).default(120),
+  TRANSCRIPTION_MAX_FILE_BYTES: z.coerce.number().int().min(1024).max(26214400).default(10485760),
+  TRANSCRIPTION_LANGUAGE: z.enum(['en', 'es']).default('en'),
 })
 
 export type WorkerEnv = z.infer<typeof workerEnvSchema>

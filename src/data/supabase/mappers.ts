@@ -18,6 +18,7 @@ import type {
   ScreenshotExtractionField,
   UsageEvent,
   VehicleInterest,
+  VoiceProcessingRecord,
 } from '../../domain/models.ts'
 import type { StoredMatchCandidate } from '../workspace.ts'
 import { DEFAULT_SETTINGS } from '../../domain/settings.ts'
@@ -250,6 +251,20 @@ export function toProfile(row: Row): Profile {
       'annual_cost_threshold_usd',
       DEFAULT_SETTINGS.annualCostThresholdUsd,
     ),
+    voiceMessagesPerDay: num(row, 'voice_messages_per_day', DEFAULT_SETTINGS.voiceMessagesPerDay),
+    transcriptionConfidenceThreshold:
+      numberOrNull(row, 'transcription_confidence_threshold') ??
+      DEFAULT_SETTINGS.transcriptionConfidenceThreshold,
+    failedAudioRetentionHours: num(
+      row,
+      'failed_audio_retention_hours',
+      DEFAULT_SETTINGS.failedAudioRetentionHours,
+    ),
+    retainFailedTranscripts: bool(
+      row,
+      'retain_failed_transcripts',
+      DEFAULT_SETTINGS.retainFailedTranscripts,
+    ),
   }
 }
 
@@ -375,6 +390,34 @@ export function toUsageEvent(row: Row): UsageEvent {
     quantity: num(row, 'quantity', 1),
     estimatedCostUsd: numberOrNull(row, 'estimated_cost_usd') ?? 0,
     occurredAt: requiredText(row, 'occurred_at'),
+  }
+}
+
+export function toVoiceRecord(row: Row): VoiceProcessingRecord {
+  return {
+    id: requiredText(row, 'id'),
+    customerId: text(row, 'customer_id'),
+    providerMessageId: requiredText(row, 'provider_message_id'),
+    providerMediaIdHash: text(row, 'provider_media_id_hash'),
+    provider: requiredText(row, 'provider', 'whatsapp_cloud'),
+    transcriptionProvider: text(row, 'transcription_provider'),
+    mimeType: text(row, 'mime_type'),
+    actualSize: numberOrNull(row, 'actual_size'),
+    durationSeconds: numberOrNull(row, 'duration_seconds'),
+    detectedLanguage: text(row, 'detected_language'),
+    transcriptPreview: text(row, 'transcript_preview'),
+    transcriptConfidence: numberOrNull(row, 'transcript_confidence'),
+    parsedIntent: text(row, 'parsed_intent'),
+    status: requiredText(row, 'status', 'received') as VoiceProcessingRecord['status'],
+    failureClassification: text(row, 'failure_classification'),
+    failureSummary: text(row, 'failure_summary'),
+    attemptCount: num(row, 'attempt_count', 0),
+    nextAttemptAt: text(row, 'next_attempt_at'),
+    audioRetained: text(row, 'audio_storage_path') !== null && text(row, 'audio_deleted_at') === null,
+    audioDeletedAt: text(row, 'audio_deleted_at'),
+    simulated: bool(row, 'simulated'),
+    createdAt: requiredText(row, 'created_at'),
+    updatedAt: requiredText(row, 'updated_at'),
   }
 }
 

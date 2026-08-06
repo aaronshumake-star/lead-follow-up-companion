@@ -210,6 +210,14 @@ by default.
 **How to monitor:** the transcription provider's usage dashboard, plus
 `inbound_commands.audio_duration_seconds` summed per month.
 
+Phase 4 additionally records `voice_message_received`,
+`audio_minute_processed`, `transcription_request`, `transcription_failed`,
+`transcription_retry`, and `audio_retained` usage events. Settings can cap voice
+messages per day, duration per note, failed-audio retention, and the annual
+warning threshold. Successful audio is deleted immediately. OpenAI transcription
+is disabled until `TRANSCRIPTION_ENABLED=true` and a server-only API key are
+both configured; the app never upgrades a plan or enables billing itself.
+
 ---
 
 ### GitHub — source and CI

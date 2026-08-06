@@ -19,6 +19,12 @@ export interface UsageTotals {
   remindersGenerated: number
   screenshotsRetained: number
   costUsd: number
+  voiceMessages: number
+  audioMinutes: number
+  transcriptionRequests: number
+  transcriptionFailures: number
+  transcriptionRetries: number
+  retainedAudio: number
 }
 
 export interface CostProjection {
@@ -42,6 +48,12 @@ const EMPTY: UsageTotals = {
   remindersGenerated: 0,
   screenshotsRetained: 0,
   costUsd: 0,
+  voiceMessages: 0,
+  audioMinutes: 0,
+  transcriptionRequests: 0,
+  transcriptionFailures: 0,
+  transcriptionRetries: 0,
+  retainedAudio: 0,
 }
 
 const FIELD_BY_KIND: Record<UsageEventKind, keyof UsageTotals> = {
@@ -52,6 +64,12 @@ const FIELD_BY_KIND: Record<UsageEventKind, keyof UsageTotals> = {
   message_failed: 'messagesFailed',
   message_retry: 'messageRetries',
   reminder_generated: 'remindersGenerated',
+  voice_message_received: 'voiceMessages',
+  audio_minute_processed: 'audioMinutes',
+  transcription_request: 'transcriptionRequests',
+  transcription_failed: 'transcriptionFailures',
+  transcription_retry: 'transcriptionRetries',
+  audio_retained: 'retainedAudio',
 }
 
 export function summarizeUsage(events: readonly UsageEvent[]): UsageTotals {

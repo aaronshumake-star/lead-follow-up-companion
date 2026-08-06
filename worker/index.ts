@@ -16,6 +16,8 @@ import { createCloudApiProvider } from '../src/providers/whatsapp/cloud-api.ts'
 import { dispatchReminders } from '../src/server/reminder-dispatcher.ts'
 import { handleInboundText, handleStatusEvent } from '../src/server/webhook-router.ts'
 import type { MessagingPort } from '../src/server/ports.ts'
+import { processVoiceMessage } from '../src/server/voice-processor.ts'
+import { createOpenAITranscriptionProvider } from '../src/providers/voice-transcription/openai.ts'
 
 export interface Env extends Record<string, unknown> {
   SUPABASE_URL: string
@@ -28,9 +30,18 @@ export interface Env extends Record<string, unknown> {
   WHATSAPP_API_VERSION: string
 }
 
+const requestWindows = new Map<string, { count: number; resetAt: number }>()
+
 export default {
   async fetch(request: Request, rawEnv: Env): Promise<Response> {
     const url = new URL(request.url)
+
+    if (!allowRequest(request, url.pathname)) {
+      return new Response('rate limited', {
+        status: 429,
+        headers: { 'retry-after': '60', ...securityHeaders() },
+      })
+    }
 
     if (url.pathname === '/healthz') {
       return new Response('ok', { status: 200 })
@@ -95,6 +106,64 @@ export default {
       }
 
       for (const message of envelope.messages) {
+        if (message.audio !== undefined) {
+          const transcription =
+            config.env.TRANSCRIPTION_ENABLED && config.env.TRANSCRIPTION_API_KEY !== undefined
+              ? createOpenAITranscriptionProvider({
+                  apiKey: config.env.TRANSCRIPTION_API_KEY,
+                  model: config.env.TRANSCRIPTION_MODEL,
+                })
+              : null
+          const result = await processVoiceMessage(
+            store,
+            messaging,
+            provider,
+            transcription,
+            { ...account, approvedNumberE164: config.env.WHATSAPP_APPROVED_NUMBER },
+            {
+              providerMessageId: message.providerMessageId,
+              providerMediaId: message.audio.mediaId,
+              fromE164: message.fromE164,
+              mimeType: message.audio.mimeType,
+              durationSeconds: message.audio.durationSeconds ?? null,
+              receivedAt: message.receivedAt,
+            },
+            {
+              maxBytes: config.env.TRANSCRIPTION_MAX_FILE_BYTES,
+              maxSeconds: config.env.TRANSCRIPTION_MAX_SECONDS,
+              transcriptMaxLength: 2000,
+              confidenceThreshold: 0.65,
+            },
+          )
+          // Successful commands and ordinary ambiguity already reply through
+          // handleInboundText. Early voice failures/low-confidence transcripts
+          // return a concise reply here, which is claimed separately so a
+          // webhook retry cannot send it twice.
+          if (
+            result.reply !== undefined &&
+            !['applied', 'asked', 'replied'].includes(result.kind)
+          ) {
+            const notificationId = await store.claimNotification({
+              userId: account.userId,
+              idempotencyKey: `voice_reply:${message.providerMessageId}`,
+              kind: 'command_error',
+              reminderStage: null,
+              followUpId: null,
+              customerId: null,
+              toNumberE164: config.env.WHATSAPP_APPROVED_NUMBER,
+              payloadSummary: `Voice reply (${result.reply.length} chars)`,
+            })
+            if (notificationId !== null) {
+              const outcome = await messaging.sendText({
+                toE164: config.env.WHATSAPP_APPROVED_NUMBER,
+                body: result.reply,
+                idempotencyKey: `voice_reply:${message.providerMessageId}`,
+              })
+              await store.recordSendResult(notificationId, { ...outcome, billable: false })
+            }
+          }
+          continue
+        }
         if (message.text === undefined) continue
 
         await handleInboundText(
@@ -196,6 +265,30 @@ function toMessagingPort(provider: ReturnType<typeof createCloudApiProvider>): M
 function json(body: unknown, status: number): Response {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { 'content-type': 'application/json' },
+    headers: { 'content-type': 'application/json', ...securityHeaders() },
   })
+}
+
+/** Best-effort edge rate limit; signature, sender and idempotency remain the hard guards. */
+function allowRequest(request: Request, path: string): boolean {
+  const ip = request.headers.get('cf-connecting-ip') ?? 'unknown'
+  const key = `${ip}:${path}`
+  const now = Date.now()
+  const current = requestWindows.get(key)
+  if (current === undefined || current.resetAt <= now) {
+    requestWindows.set(key, { count: 1, resetAt: now + 60_000 })
+    return true
+  }
+  current.count += 1
+  return current.count <= 60
+}
+
+function securityHeaders(): Record<string, string> {
+  return {
+    'x-content-type-options': 'nosniff',
+    'x-frame-options': 'DENY',
+    'referrer-policy': 'no-referrer',
+    'cache-control': 'no-store',
+    'access-control-allow-origin': 'null',
+  }
 }

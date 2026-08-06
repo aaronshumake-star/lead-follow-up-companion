@@ -156,6 +156,27 @@ export function createSupabaseStore(url: string, serviceRoleKey: string): Webhoo
       return error === null
     },
 
+    async claimVoice(input) {
+      const { data, error } = await client
+        .from('voice_processing_records')
+        .insert({
+          user_id: input.userId,
+          provider_message_id: input.providerMessageId,
+          provider_media_id_hash: input.providerMediaIdHash,
+          mime_type: input.mimeType,
+          status: 'authorized',
+          simulated: input.simulated,
+        })
+        .select('id')
+        .single()
+      if (error !== null) return null
+      return (data as { id: string }).id
+    },
+
+    async updateVoice(voiceRecordId, patch) {
+      await client.from('voice_processing_records').update(patch).eq('id', voiceRecordId)
+    },
+
     async updateDeliveryStatus(providerMessageId, status, error): Promise<void> {
       const mapped =
         status === 'delivered' ? 'delivered' : status === 'read' ? 'read' : status === 'failed' ? 'failed' : 'sent'

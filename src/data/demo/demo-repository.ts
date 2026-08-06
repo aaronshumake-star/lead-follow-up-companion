@@ -39,6 +39,7 @@ import type {
   ScheduleFollowUpInput,
   SimulatedDispatch,
   SimulatedInbound,
+  SimulatedVoice,
   VehicleInterestDraft,
   WorkspaceSnapshot,
 } from '../workspace.ts'
@@ -53,6 +54,7 @@ import {
   runSimulatedInbound,
   runSimulatedReminders,
 } from './import-runtime.ts'
+import { retryVoice, simulateVoice } from './voice-runtime.ts'
 
 export class DemoRepository implements Repository {
   readonly mode = 'demo' as const
@@ -615,6 +617,64 @@ export class DemoRepository implements Repository {
     now: Date = new Date(),
   ): Promise<SimulatedInbound> {
     return this.mutate((snapshot) => runSimulatedInbound(snapshot, fromE164, text, now))
+  }
+
+  async simulateVoiceMessage(
+    scenarioId: string,
+    fromE164: string,
+    now: Date = new Date(),
+  ): Promise<SimulatedVoice> {
+    return this.mutate((snapshot) => simulateVoice(snapshot, scenarioId, fromE164, now))
+  }
+
+  async retryVoiceMessage(voiceRecordId: string): Promise<SimulatedVoice> {
+    return this.mutate((snapshot) => retryVoice(snapshot, voiceRecordId, new Date()))
+  }
+
+  async deleteRetainedAudio(voiceRecordId: string): Promise<void> {
+    await this.mutate((snapshot) => {
+      const record = snapshot.voiceRecords.find((item) => item.id === voiceRecordId)
+      if (record === undefined) return
+      record.audioRetained = false
+      record.audioDeletedAt = new Date().toISOString()
+      record.status = record.status === 'failed' ? 'deleted' : record.status
+    })
+  }
+
+  async cleanupPrivateData(before: Date): Promise<number> {
+    return this.mutate((snapshot) => {
+      let count = 0
+      for (const record of snapshot.voiceRecords) {
+        if (new Date(record.createdAt) >= before) continue
+        record.transcriptPreview = null
+        record.failureSummary = null
+        record.audioRetained = false
+        record.audioDeletedAt ??= new Date().toISOString()
+        count += 1
+      }
+      snapshot.clarificationSessions = snapshot.clarificationSessions.filter(
+        (item) => new Date(item.expiresAt) >= before,
+      )
+      return count
+    })
+  }
+
+  async deleteAllUserData(): Promise<void> {
+    await this.mutate((snapshot) => {
+      snapshot.customers = []
+      snapshot.contactMethods = []
+      snapshot.vehicleInterests = []
+      snapshot.activities = []
+      snapshot.followUps = []
+      snapshot.auditEntries = []
+      snapshot.screenshots = []
+      snapshot.extractionFields = []
+      snapshot.matchCandidates = []
+      snapshot.notifications = []
+      snapshot.clarificationSessions = []
+      snapshot.usageEvents = []
+      snapshot.voiceRecords = []
+    })
   }
 
   async resetDemoData(): Promise<void> {

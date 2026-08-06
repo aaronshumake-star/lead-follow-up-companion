@@ -22,10 +22,28 @@ Every active customer must be in one of these states:
 An active customer in none of those states appears at the top of the dashboard
 in the **No next action** queue. That queue is the product.
 
-## Status: Phase 3
+## Status: Phase 4 — final build
 
-Screenshot intake with on-device OCR, automatic customer matching, the reminder
-engine and WhatsApp text commands are in. Voice notes are Phase 4.
+The application is feature-complete: manual tracking, screenshot OCR, reminders,
+WhatsApp text and voice commands, backup/recovery, privacy cleanup and
+operational diagnostics.
+
+**New in Phase 4:**
+
+- WhatsApp voice-note intake with sender/signature/idempotency checks before
+  media download
+- MIME/signature/size/duration validation and server-only transcription
+- Demo voice scenarios, safe retries, clarification through normal text replies
+- Successful audio deletion by default and temporary failed-audio retention
+- JSON backup, customer CSV, restore dry run and conservative additive restore
+- Privacy cleanup, delete-all-data control and operational diagnostics
+- CSP/security headers and an explicit PWA update notice to prevent stale shells
+
+Guides:
+
+- [Deployment guide](./DEPLOYMENT_GUIDE.md)
+- [Meta WhatsApp setup](./META_WHATSAPP_SETUP.md)
+- [Supabase setup](./SUPABASE_SETUP.md)
 
 **New in Phase 3:**
 
@@ -509,7 +527,7 @@ first.
 | 1 ✅ | Foundation: schema, RLS, auth, shell, provider interfaces |
 | 2 ✅ | Manual lead tracker: customers, activities, follow-ups, dashboard, search |
 | 3 ✅ | Screenshot OCR, automatic matching, reminders, WhatsApp text commands |
-| 4 | Voice-note commands, off by default |
+| 4 ✅ | Voice notes, backup/recovery, privacy, diagnostics and hardening |
 
 ## License
 
