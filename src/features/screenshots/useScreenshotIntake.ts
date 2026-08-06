@@ -5,6 +5,7 @@ import { measureImageInBrowser, validateImage, type ValidatedImage } from '../..
 import { createFixtureExtractionProvider } from '../../providers/screenshot-extraction/fixture.ts'
 import { createTesseractExtractionProvider } from '../../providers/screenshot-extraction/tesseract.ts'
 import { parseUntrustedOcr } from '../../domain/screenshot/parse-ocr.ts'
+import { emptyExtraction } from '../../domain/screenshot/extraction.ts'
 import { decideImport } from '../../domain/screenshot/decision-engine.ts'
 import type { ImportOutcome } from '../../data/workspace.ts'
 import { readUntrusted } from '../../lib/untrusted.ts'
@@ -165,9 +166,9 @@ export function useScreenshotIntake(options: { scenarioId?: string | null } = {}
         const extraction = parsed.ok ? parsed.value : null
 
         const decision = decideImport({
-          extraction: extraction ?? {
-            ...(await import('../../domain/screenshot/extraction.ts')).emptyExtraction(),
-          },
+          // An invalid parse still needs a shape to reason about; the engine
+          // reads extractionValid, not the placeholder.
+          extraction: extraction ?? emptyExtraction(),
           customers: snapshot?.customers ?? [],
           isDuplicateHash: false,
           extractionValid: parsed.ok,

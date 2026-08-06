@@ -33,6 +33,25 @@ Features that get reduced or removed *before* WhatsApp does:
 
 ## Service-by-service
 
+### Cloudflare Workers — scheduler and webhook
+
+| | |
+| --- | --- |
+| Free-tier limit | 100,000 requests/day, 10 ms CPU per invocation |
+| Estimated usage | ~2,900 cron invocations/month plus a handful of webhook calls |
+| Estimated yearly cost | **$0.00** |
+
+The cron fires every fifteen minutes. Each run is a few queries and, usually,
+zero sends — digests only fire inside their configured window, and individual
+reminders only when something is actually due.
+
+**What could create charges:** a much shorter cron interval, or a paid Workers
+plan. Neither is needed.
+
+**How to monitor:** Cloudflare dashboard → Workers → your Worker → Metrics.
+
+---
+
 ### Cloudflare Pages — hosting
 
 | | |
@@ -118,14 +137,16 @@ with the free service-conversation allowance applied it is usually $0.
 
 | Control | Mechanism |
 | --- | --- |
-| One recipient only | Sends are validated against `profiles.whatsapp_number_e164`; customers are never messaged |
-| Digests, not per-item messages | Reminders due in the same window are combined into one message |
-| No duplicates | Every send carries an idempotency key with a unique index on `notification_log (user_id, idempotency_key)` — a duplicate insert fails rather than billing twice |
-| Retries capped | `notification_log.attempt_count` has a `check (attempt_count between 0 and 3)` constraint |
-| Monthly meter | The `monthly_message_usage` view counts billable sends per month |
-| Hard budget | `profiles.monthly_message_budget` (default 300); sending stops at the cap |
-| Kill switch | `profiles.whatsapp_enabled` — turning it off stops all sends immediately |
-| Fallback | The web dashboard shows the same queue, so the app is fully usable with WhatsApp off |
+| One recipient only | The provider itself checks the destination against the approved number before every request; a bug elsewhere cannot message a customer |
+| Digests, not per-item messages | `profiles.digest_only` collapses everything into one or two messages a day |
+| No duplicates | Every send **claims** a unique idempotency key before it is sent. `claim_notification` returns null on a collision, so concurrent scheduler runs and retries cannot both send |
+| Overdue chased on an interval | `profiles.overdue_reminder_interval_hours` — a lead overdue for a week produces one message a day, not one per cron tick |
+| Retries capped, and only when safe | Three attempts maximum, and only for error codes the provider marks transient. A re-engagement rejection or an undeliverable number is permanent and never retried |
+| Monthly meter | `monthly_usage_summary` totals measured cost per kind |
+| Projected annual cost | The WhatsApp page projects from measured usage and warns at 80% of `profiles.annual_cost_threshold_usd` |
+| Hard budget | `profiles.monthly_message_budget` (default 300) |
+| Kill switch | `profiles.whatsapp_enabled` and `profiles.reminders_enabled` |
+| Fallback | The dashboard shows the same queue, so the app is fully usable with WhatsApp off. Waiting deadlines still expire on load |
 
 **How to disable paid usage:** Settings → turn off WhatsApp notifications. The
 database constraint also prevents enabling it without an approved number.
