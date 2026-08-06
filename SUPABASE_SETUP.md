@@ -27,6 +27,22 @@ SQL manually.
 2. Enter your email/password and tick **Auto Confirm User**.
 3. Authentication → Providers → Email → turn **Enable sign-ups** off.
 
+## Production authentication URLs
+
+In Supabase Dashboard → **Authentication** → **URL Configuration**:
+
+1. Set **Site URL** to `https://lead-follow-up-companion.pages.dev`.
+2. Under **Redirect URLs**, add these two exact entries:
+   - `https://lead-follow-up-companion.pages.dev/reset-password`
+   - `https://lead-follow-up-companion.pages.dev/auth/callback`
+3. Remove the old production `/sign-in` redirect if it is listed. Keep local or
+   preview redirects only when they are still actively used.
+
+When sending from Authentication → Users, choose the matching redirect URL:
+use `/reset-password` for **Send password recovery** and `/auth/callback` for
+**Send magic link**. Redirect URLs must match exactly; do not substitute the
+site root or `/sign-in`.
+
 ## Browser-safe values
 
 Project Settings → API:

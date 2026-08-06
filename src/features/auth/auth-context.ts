@@ -7,13 +7,16 @@ export interface AppUser {
 }
 
 export type AuthStatus = 'loading' | 'authenticated' | 'unauthenticated'
+export type PasswordRecoveryStatus = 'idle' | 'loading' | 'ready' | 'invalid'
 
 export interface AuthContextValue {
   status: AuthStatus
+  passwordRecoveryStatus: PasswordRecoveryStatus
   user: AppUser | null
   /** True when running against fixtures with no Supabase project attached. */
   isDemo: boolean
   signIn(email: string, password: string): Promise<{ error: string | null }>
+  updatePassword(password: string): Promise<{ error: string | null }>
   signOut(): Promise<void>
 }
 
