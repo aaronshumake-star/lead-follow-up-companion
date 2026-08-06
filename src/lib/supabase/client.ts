@@ -22,9 +22,10 @@ export function getSupabaseClient(): SupabaseClient | null {
     auth: {
       persistSession: true,
       autoRefreshToken: true,
-      // The app is a single-page app with no OAuth redirect flow, so there is
-      // never a session to recover from the URL.
-      detectSessionInUrl: false,
+      // Recovery and magic-link emails return credentials in the URL. Supabase
+      // validates them, persists the resulting session, and emits the matching
+      // auth event before the route renders its final state.
+      detectSessionInUrl: true,
       storageKey: 'lead-follow-up-companion.auth',
     },
     global: {

@@ -2,7 +2,13 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react
 import { getSupabaseClient } from '../../lib/supabase/client.ts'
 import { isDemoMode } from '../../config/env.ts'
 import { DEMO_USER } from '../../data/fixtures.ts'
-import { AuthContext, type AppUser, type AuthContextValue, type AuthStatus } from './auth-context.ts'
+import {
+  AuthContext,
+  type AppUser,
+  type AuthContextValue,
+  type AuthStatus,
+  type PasswordRecoveryStatus,
+} from './auth-context.ts'
 
 /**
  * Authentication state for the whole app.
@@ -17,12 +23,19 @@ import { AuthContext, type AppUser, type AuthContextValue, type AuthStatus } fro
  * accidentally shadow a real session.
  */
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const supabase = getSupabaseClient()
+  const [recoveryRequest] = useState(readPasswordRecoveryRequest)
   const [status, setStatus] = useState<AuthStatus>(isDemoMode ? 'authenticated' : 'loading')
   const [user, setUser] = useState<AppUser | null>(isDemoMode ? DEMO_USER : null)
+  const [passwordRecoveryStatus, setPasswordRecoveryStatus] = useState<PasswordRecoveryStatus>(
+    recoveryRequest.isRecoveryRoute ? 'loading' : 'idle',
+  )
+  const supabase = getSupabaseClient()
 
   useEffect(() => {
-    if (supabase === null) return
+    if (supabase === null) {
+      if (recoveryRequest.isRecoveryRoute) setPasswordRecoveryStatus('invalid')
+      return
+    }
 
     let active = true
 
@@ -33,23 +46,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const session = data.session
         setUser(session === null ? null : toAppUser(session.user))
         setStatus(session === null ? 'unauthenticated' : 'authenticated')
+        if (recoveryRequest.isRecoveryRoute) {
+          setPasswordRecoveryStatus(
+            session !== null && recoveryRequest.hasAuthResponse ? 'ready' : 'invalid',
+          )
+        }
       })
       .catch(() => {
         if (!active) return
         // Never surface the underlying error: it can echo configuration values.
         setStatus('unauthenticated')
+        if (recoveryRequest.isRecoveryRoute) setPasswordRecoveryStatus('invalid')
       })
 
-    const { data: subscription } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: subscription } = supabase.auth.onAuthStateChange((event, session) => {
       setUser(session === null ? null : toAppUser(session.user))
       setStatus(session === null ? 'unauthenticated' : 'authenticated')
+      if (event === 'PASSWORD_RECOVERY') setPasswordRecoveryStatus('ready')
     })
 
     return () => {
       active = false
       subscription.subscription.unsubscribe()
     }
-  }, [supabase])
+  }, [recoveryRequest, supabase])
 
   const signIn = useCallback<AuthContextValue['signIn']>(
     async (email, password) => {
@@ -67,6 +87,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [supabase],
   )
 
+  const updatePassword = useCallback<AuthContextValue['updatePassword']>(
+    async (password) => {
+      if (supabase === null || passwordRecoveryStatus !== 'ready') {
+        return { error: 'This password recovery link is invalid or has expired.' }
+      }
+
+      const { error } = await supabase.auth.updateUser({ password })
+      if (error === null) {
+        setPasswordRecoveryStatus('idle')
+        return { error: null }
+      }
+
+      return { error: 'Could not update the password. Request a new recovery email and try again.' }
+    },
+    [passwordRecoveryStatus, supabase],
+  )
+
   const signOut = useCallback(async () => {
     if (supabase === null) return
     await supabase.auth.signOut()
@@ -75,11 +112,41 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [supabase])
 
   const value = useMemo<AuthContextValue>(
-    () => ({ status, user, isDemo: isDemoMode, signIn, signOut }),
-    [status, user, signIn, signOut],
+    () => ({
+      status,
+      passwordRecoveryStatus,
+      user,
+      isDemo: isDemoMode,
+      signIn,
+      updatePassword,
+      signOut,
+    }),
+    [status, passwordRecoveryStatus, user, signIn, updatePassword, signOut],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
+}
+
+function readPasswordRecoveryRequest(): {
+  isRecoveryRoute: boolean
+  hasAuthResponse: boolean
+} {
+  if (typeof window === 'undefined') {
+    return { isRecoveryRoute: false, hasAuthResponse: false }
+  }
+
+  const isRecoveryRoute = window.location.pathname === '/reset-password'
+  const search = new URLSearchParams(window.location.search)
+  const hash = new URLSearchParams(window.location.hash.replace(/^#/, ''))
+  const hasAuthResponse =
+    search.has('code') ||
+    search.has('token_hash') ||
+    search.has('error') ||
+    hash.has('access_token') ||
+    hash.has('type') ||
+    hash.has('error')
+
+  return { isRecoveryRoute, hasAuthResponse }
 }
 
 function toAppUser(user: { id: string; email?: string; user_metadata?: Record<string, unknown> }): AppUser {
