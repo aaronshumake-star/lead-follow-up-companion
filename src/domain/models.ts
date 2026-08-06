@@ -41,7 +41,14 @@ export interface Customer {
   leadPriority: LeadPriority
   leadTemperature: LeadTemperature
   leadStatus: LeadStatus
+  /** What the customer asked to be contacted by; a preference, not a record. */
+  preferredContactMethod: ContactMethod | null
   notes: string | null
+  /** Surfaced on the card and detail header without the rest of the notes. */
+  pinnedNote: string | null
+  objections: string | null
+  tradeNotes: string | null
+  financeStatus: string | null
   source: RecordSource
   lastActivityAt: IsoTimestamp | null
   archivedAt: IsoTimestamp | null
@@ -108,20 +115,54 @@ export interface FollowUp {
   snoozedUntil: IsoTimestamp | null
   reminderStatus: ReminderStatus
   whatsappMessageId: string | null
+  /** An appointment is a follow-up with a stronger promise attached. */
+  isAppointment: boolean
+  canceledAt: IsoTimestamp | null
+  /** How the previous commitment ended, kept so history is never silent. */
+  outcomeNote: string | null
+  /** Set when this follow-up replaced an earlier one, making the chain walkable. */
+  rescheduledFromId: string | null
+  createdAt: IsoTimestamp
 }
 
 export interface Screenshot {
   id: string
   customerId: string | null
+  /** SHA-256 of the image bytes; the duplicate-detection key. */
   fileHash: string
   mimeType: string
   byteSize: number
   status: ScreenshotStatus
   extractionProvider: string | null
+  /** Untrusted OCR output. Kept only while the capture is unresolved. */
   rawText: string | null
   capturedAt: IsoTimestamp | null
   createdAt: IsoTimestamp
+
+  /** What the decision engine concluded, so an automatic import is explainable. */
+  decision: ImportDecisionName | null
+  decisionReason: string | null
+  overallConfidence: number | null
+  warnings: string[]
+  containsMultipleCustomers: boolean
+  imageWidth: number | null
+  imageHeight: number | null
+  originalFilename: string | null
+  /** Images are discarded after extraction unless retention is switched on. */
+  retained: boolean
+  reviewResolvedAt: IsoTimestamp | null
+  reviewAction: string | null
 }
+
+/** Mirrors the ImportDecision union without importing the engine into models. */
+export type ImportDecisionName =
+  | 'AUTO_CREATE'
+  | 'AUTO_UPDATE'
+  | 'SAVE_WITH_UNVERIFIED_FIELDS'
+  | 'NEEDS_MATCH_REVIEW'
+  | 'NEEDS_CONFLICT_REVIEW'
+  | 'EXTRACTION_FAILED'
+  | 'DUPLICATE_IGNORED'
 
 export interface ScreenshotExtractionField {
   id: string
@@ -130,6 +171,46 @@ export interface ScreenshotExtractionField {
   fieldValue: string | null
   confidence: number | null
   accepted: boolean | null
+  /** False when the value was read with low confidence but still worth keeping. */
+  verified: boolean
+  appliedAsUnverified: boolean
+}
+
+/**
+ * A question the app asked over WhatsApp that is still waiting for an answer.
+ * One open per user, always with an expiry, so a bare "1" is never ambiguous.
+ */
+export interface ClarificationSession {
+  id: string
+  kind: string
+  prompt: string
+  options: Array<{ label: string; value: string }>
+  pendingPayload: Record<string, unknown>
+  expiresAt: IsoTimestamp
+  resolvedAt: IsoTimestamp | null
+  resolution: string | null
+  createdAt: IsoTimestamp
+}
+
+export const USAGE_EVENT_KINDS = [
+  'ocr_job',
+  'screenshot_retained',
+  'message_sent',
+  'message_received',
+  'message_failed',
+  'message_retry',
+  'reminder_generated',
+] as const
+export type UsageEventKind = (typeof USAGE_EVENT_KINDS)[number]
+
+/** One measured unit of anything that could eventually cost money. */
+export interface UsageEvent {
+  id: string
+  kind: UsageEventKind
+  quantity: number
+  /** Zero for anything free, such as in-browser OCR. */
+  estimatedCostUsd: number
+  occurredAt: IsoTimestamp
 }
 
 export interface InboundCommand {
@@ -149,12 +230,40 @@ export interface InboundCommand {
 export interface NotificationLogEntry {
   id: string
   customerId: string | null
+  followUpId: string | null
   kind: NotificationKind
   status: NotificationStatus
+  /** Unique per logical message; the thing that makes a resend impossible. */
   idempotencyKey: string
+  reminderStage: ReminderStage | null
   payloadSummary: string | null
   billable: boolean
+  attemptCount: number
+  error: string | null
+  /** True once retries are exhausted, so the failure stays visible. */
+  permanentFailure: boolean
+  nextAttemptAt: IsoTimestamp | null
   sentAt: IsoTimestamp | null
+  createdAt: IsoTimestamp
+}
+
+export const REMINDER_STAGES = [
+  'due_now',
+  'overdue',
+  'waiting_deadline',
+  'appointment',
+  'morning_digest',
+  'end_of_day_digest',
+] as const
+export type ReminderStage = (typeof REMINDER_STAGES)[number]
+
+export const REMINDER_STAGE_LABELS: Record<ReminderStage, string> = {
+  due_now: 'Due now',
+  overdue: 'Overdue',
+  waiting_deadline: 'Waiting deadline',
+  appointment: 'Appointment',
+  morning_digest: 'Morning digest',
+  end_of_day_digest: 'End-of-day digest',
 }
 
 export interface Profile {
@@ -169,4 +278,51 @@ export interface Profile {
   monthlyVoiceMinuteBudget: number
   retainScreenshots: boolean
   retainVoiceAudio: boolean
+
+  /** Scheduling preferences; see src/domain/settings.ts for the defaults. */
+  morningAt: string
+  afternoonAt: string
+  noAnswerFollowUpHours: number
+  voicemailFollowUpHours: number
+  textNoReplyFollowUpHours: number
+  emailNoReplyFollowUpHours: number
+  quoteSentFollowUpHours: number
+  waitingTimeoutHours: number
+  defaultLeadPriority: LeadPriority
+  dateTimeDisplay: DateTimeDisplay
+
+  autoImportEnabled: boolean
+  autoFollowUpOnImport: boolean
+  newLeadSameDayCutoffHour: number
+  sameDayFollowUpDelayHours: number
+
+  remindersEnabled: boolean
+  individualRemindersEnabled: boolean
+  digestOnly: boolean
+  morningDigestEnabled: boolean
+  endOfDayDigestEnabled: boolean
+  endOfDayDigestAt: string
+  appointmentReminderLeadHours: number
+  overdueReminderIntervalHours: number
+  reminderMaxAttempts: number
+
+  annualCostThresholdUsd: number
+}
+
+export type DateTimeDisplay = 'relative' | 'absolute' | 'both'
+
+/**
+ * An append-only record of a change. Written when an activity is corrected, so
+ * that fixing a mistyped call outcome leaves a trail rather than rewriting
+ * history silently.
+ */
+export interface AuditEntry {
+  id: string
+  action: 'insert' | 'update' | 'delete' | 'access_denied' | 'auth'
+  tableName: string
+  recordId: string | null
+  summary: string | null
+  /** Holds `before`, `after` and an optional `reason`. */
+  metadata: Record<string, unknown>
+  createdAt: IsoTimestamp
 }

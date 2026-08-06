@@ -3,42 +3,21 @@ import { summarizeContactMethods } from './contact-methods.ts'
 import type { Activity, CustomerContactMethod } from './models.ts'
 import type { ContactMethod } from './vocabulary.ts'
 import { activitiesForCustomer, contactMethodsForCustomer } from '../data/fixtures.ts'
+import { makeActivity, makeContactMethod } from '../test-support/factories.ts'
 
 function method(
   id: string,
   kind: ContactMethod,
   overrides: Partial<CustomerContactMethod> = {},
 ): CustomerContactMethod {
-  return {
-    id,
-    customerId: 'cust-1',
-    method: kind,
-    value: 'value',
-    label: null,
-    isPrimary: false,
-    isVerified: false,
-    optedOut: false,
-    source: 'manual',
-    ...overrides,
-  }
+  return makeContactMethod({ id, method: kind, value: 'value', ...overrides })
 }
 
 function activity(
   id: string,
   overrides: Partial<Activity> & Pick<Activity, 'type' | 'direction' | 'occurredAt'>,
 ): Activity {
-  return {
-    id,
-    customerId: 'cust-1',
-    method: null,
-    outcome: null,
-    summary: null,
-    rawText: null,
-    source: 'manual',
-    performedByUser: false,
-    externalMessageId: null,
-    ...overrides,
-  }
+  return makeActivity({ id, ...overrides })
 }
 
 describe('summarizeContactMethods', () => {

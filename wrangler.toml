@@ -1,0 +1,26 @@
+# Cloudflare Worker: the reminder scheduler and the WhatsApp webhook.
+#
+# Deployed separately from the Pages site. Runs on the free tier — the cron
+# below fires every fifteen minutes, roughly 2,900 invocations a month against
+# a 100,000/day allowance.
+#
+# Every secret is set with `npx wrangler secret put NAME`, never in this file.
+# See README.md for the full list.
+
+name = "lead-follow-up-companion-worker"
+main = "worker/index.ts"
+compatibility_date = "2026-08-01"
+workers_dev = false
+
+[observability]
+enabled = true
+
+[triggers]
+# Frequent enough that a follow-up due at 10:00 is reminded about promptly,
+# infrequent enough to stay well inside the free allowance. Digests fire only
+# inside their configured window, so the extra ticks cost nothing.
+crons = ["*/15 * * * *"]
+
+[vars]
+# Non-secret default. Everything else is a secret; see README.md.
+WHATSAPP_API_VERSION = "v21.0"
