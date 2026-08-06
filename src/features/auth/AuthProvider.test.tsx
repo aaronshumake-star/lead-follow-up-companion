@@ -21,6 +21,9 @@ const authMocks = vi.hoisted(() => {
 })
 
 vi.mock('../../config/env.ts', () => ({
+  env: {
+    VITE_DEFAULT_TIME_ZONE: 'America/Chicago',
+  },
   isDemoMode: false,
 }))
 

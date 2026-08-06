@@ -3,6 +3,7 @@ import { AppShell } from './components/layout/AppShell.tsx'
 import { ToastProvider } from './components/ui/ToastProvider.tsx'
 import { AuthProvider } from './features/auth/AuthProvider.tsx'
 import { AuthCallbackPage } from './features/auth/AuthCallbackPage.tsx'
+import { PasswordRecoveryRedirect } from './features/auth/PasswordRecoveryRedirect.tsx'
 import { RequireAuth } from './features/auth/RequireAuth.tsx'
 import { ResetPasswordPage } from './features/auth/ResetPasswordPage.tsx'
 import { SignInPage } from './features/auth/SignInPage.tsx'
@@ -28,6 +29,7 @@ export function App() {
     <AuthProvider>
       <ToastProvider>
         <AppUpdateNotice />
+        <PasswordRecoveryRedirect />
         <Routes>
           <Route path="/sign-in" element={<SignInPage />} />
           <Route path="/reset-password" element={<ResetPasswordPage />} />

@@ -5,6 +5,7 @@ import { MemoryRouter, Route, Routes } from 'react-router'
 import { describe, expect, it, vi } from 'vitest'
 import { AuthContext, type AuthContextValue } from './auth-context.ts'
 import { AuthCallbackPage } from './AuthCallbackPage.tsx'
+import { PasswordRecoveryRedirect } from './PasswordRecoveryRedirect.tsx'
 import { ResetPasswordPage } from './ResetPasswordPage.tsx'
 import { SignInPage } from './SignInPage.tsx'
 
@@ -50,6 +51,28 @@ describe('Supabase email auth routes', () => {
     expect(updatePassword).toHaveBeenCalledWith('new-password-123')
     expect(await screen.findByText(/password was updated successfully/i)).toBeInTheDocument()
     expect(screen.getByText(/redirecting to the dashboard/i)).toBeInTheDocument()
+  })
+
+  it('routes a dashboard-generated recovery link from the Site URL to the reset screen', () => {
+    render(
+      <MemoryRouter initialEntries={['/']}>
+        <AuthContext.Provider
+          value={{
+            ...defaultAuth,
+            status: 'authenticated',
+            passwordRecoveryStatus: 'ready',
+          }}
+        >
+          <PasswordRecoveryRedirect />
+          <Routes>
+            <Route path="/" element={<h1>Dashboard</h1>} />
+            <Route path="/reset-password" element={<h1>Reset screen</h1>} />
+          </Routes>
+        </AuthContext.Provider>
+      </MemoryRouter>,
+    )
+
+    expect(screen.getByRole('heading', { name: 'Reset screen' })).toBeInTheDocument()
   })
 
   it('redirects an established magic-link session to the Dashboard', () => {

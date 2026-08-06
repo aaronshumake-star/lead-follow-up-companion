@@ -94,7 +94,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       const { error } = await supabase.auth.updateUser({ password })
-      if (error === null) return { error: null }
+      if (error === null) {
+        setPasswordRecoveryStatus('idle')
+        return { error: null }
+      }
 
       return { error: 'Could not update the password. Request a new recovery email and try again.' }
     },

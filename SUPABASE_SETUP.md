@@ -38,10 +38,12 @@ In Supabase Dashboard → **Authentication** → **URL Configuration**:
 3. Remove the old production `/sign-in` redirect if it is listed. Keep local or
    preview redirects only when they are still actively used.
 
-When sending from Authentication → Users, choose the matching redirect URL:
-use `/reset-password` for **Send password recovery** and `/auth/callback` for
-**Send magic link**. Redirect URLs must match exactly; do not substitute the
-site root or `/sign-in`.
+Application-generated emails must pass `/reset-password` to
+`resetPasswordForEmail` and `/auth/callback` to `signInWithOtp`. The
+Authentication → Users buttons do not offer a per-email redirect and use the
+Site URL instead; the app detects the returned auth event at the site root and
+routes recovery links to the reset screen while magic links continue to the
+Dashboard.
 
 ## Browser-safe values
 
