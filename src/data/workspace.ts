@@ -24,6 +24,7 @@ import type {
   ScreenshotExtractionField,
   UsageEvent,
   VehicleInterest,
+  VoiceProcessingRecord,
 } from '../domain/models.ts'
 import type { ExtractionResult } from '../domain/screenshot/extraction.ts'
 import type { ImportDecision } from '../domain/screenshot/decision-engine.ts'
@@ -58,6 +59,7 @@ export interface WorkspaceSnapshot {
   notifications: NotificationLogEntry[]
   clarificationSessions: ClarificationSession[]
   usageEvents: UsageEvent[]
+  voiceRecords: VoiceProcessingRecord[]
 }
 
 export interface StoredMatchCandidate {
@@ -271,6 +273,11 @@ export interface Repository {
    */
   simulateReminderRun?(now?: Date): Promise<SimulatedDispatch>
   simulateInboundMessage?(fromE164: string, text: string, now?: Date): Promise<SimulatedInbound>
+  simulateVoiceMessage?(scenarioId: string, fromE164: string, now?: Date): Promise<SimulatedVoice>
+  retryVoiceMessage?(voiceRecordId: string): Promise<SimulatedVoice>
+  deleteRetainedAudio?(voiceRecordId: string): Promise<void>
+  cleanupPrivateData?(before: Date): Promise<number>
+  deleteAllUserData?(): Promise<void>
 
   /** Demo mode only: discards local records and reloads the fixtures. */
   resetDemoData?(): Promise<void>
@@ -371,5 +378,13 @@ export interface SimulatedInbound {
   /** The reply the app would send back. Empty when the sender was rejected. */
   reply: string
   /** Present when the sender was not the approved number. */
+  rejectionReason?: string
+}
+
+export interface SimulatedVoice {
+  accepted: boolean
+  reply: string
+  voiceRecordId: string | null
+  customerId?: string | null
   rejectionReason?: string
 }

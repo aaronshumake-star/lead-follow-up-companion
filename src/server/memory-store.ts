@@ -72,6 +72,7 @@ export class MemoryStore implements WebhookStore {
     expiresAt: string
     resolvedAt: string | null
   } | null = null
+  readonly voiceRecords: Array<{ id: string; providerMessageId: string; status: string; patch: Record<string, unknown> }> = []
 
   private counter = 0
 
@@ -209,6 +210,27 @@ export class MemoryStore implements WebhookStore {
 
     this.inboundMessageIds.add(input.providerMessageId)
     return true
+  }
+
+  async claimVoice(input: {
+    userId: string
+    providerMessageId: string
+    providerMediaIdHash: string
+    mimeType: string
+    simulated: boolean
+  }): Promise<string | null> {
+    if (this.voiceRecords.some((item) => item.providerMessageId === input.providerMessageId)) return null
+    this.counter += 1
+    const id = `v-${this.counter}`
+    this.voiceRecords.push({ id, providerMessageId: input.providerMessageId, status: 'authorized', patch: { ...input } })
+    return id
+  }
+
+  async updateVoice(id: string, patch: Record<string, unknown>): Promise<void> {
+    const record = this.voiceRecords.find((item) => item.id === id)
+    if (record === undefined) return
+    Object.assign(record.patch, patch)
+    if (typeof patch['status'] === 'string') record.status = patch['status']
   }
 
   async updateDeliveryStatus(providerMessageId: string, status: string, error?: string | null): Promise<void> {

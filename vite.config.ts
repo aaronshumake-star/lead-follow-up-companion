@@ -9,8 +9,11 @@ export default defineConfig({
     react(),
     tailwindcss(),
     VitePWA({
-      registerType: 'autoUpdate',
-      injectRegister: 'auto',
+      // Prompt, never auto-reload: a salesperson may have an unsaved note.
+      // updateSW(true) activates once and cleanupOutdatedCaches removes the old
+      // shell, preventing the stale Phase-1 cache problem without a reload loop.
+      registerType: 'prompt',
+      injectRegister: false,
       includeAssets: ['favicon.svg', 'robots.txt', 'icons/apple-touch-icon-180.png'],
       manifest: {
         name: 'Lead Follow-Up Companion',

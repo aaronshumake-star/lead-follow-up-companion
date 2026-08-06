@@ -25,6 +25,8 @@ export interface TranscriptionInput {
   /** Hard cap checked before the request is made. */
   maxDurationSeconds: number
   languageHint?: 'en' | 'es'
+  maxTranscriptLength?: number
+  requestId?: string
   /** Audio is discarded once a transcript exists unless retention is enabled. */
   deleteAudioAfterProcessing: boolean
 }
@@ -36,7 +38,19 @@ export interface TranscriptionResult {
   /** Billed duration, recorded against the monthly voice budget. */
   billedSeconds: number
   audioDeleted: boolean
+  detectedLanguage?: string | null
+  providerRequestId?: string | null
+  estimatedCostUsd?: number
 }
+
+export type TranscriptionFailureClassification =
+  | 'disabled'
+  | 'temporary_provider'
+  | 'permanent_provider'
+  | 'timeout'
+  | 'invalid_audio'
+  | 'duration_exceeded'
+  | 'oversized'
 
 export interface VoiceTranscriptionProvider {
   readonly info: ProviderInfo

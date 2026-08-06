@@ -214,10 +214,42 @@ export function createCloudApiProvider(config: CloudApiConfig): CloudApiProvider
     },
 
     async fetchMedia(mediaId: string): Promise<ProviderResult<Blob>> {
-      // Voice notes belong to Phase 4; the interface method stays for the
-      // provider contract but does nothing yet.
-      void mediaId
-      return providerFailure<Blob>('not_implemented', 'Media download arrives with voice notes.')
+      if (!/^[A-Za-z0-9._-]{5,200}$/.test(mediaId)) {
+        return providerFailure('invalid_input', 'Invalid media id.')
+      }
+      try {
+        const metadata = await doFetch(`${base}/${mediaId}`, {
+          headers: { authorization: `Bearer ${config.accessToken}` },
+        })
+        if (!metadata.ok) {
+          return providerFailure(
+            'provider_error',
+            `Media metadata failed (HTTP ${metadata.status}).`,
+            metadata.status === 429 || metadata.status >= 500,
+          )
+        }
+        const value = (await metadata.json()) as { url?: string; mime_type?: string; file_size?: number }
+        if (typeof value.url !== 'string') {
+          return providerFailure('provider_error', 'Meta returned no media URL.')
+        }
+        const response = await doFetch(value.url, {
+          headers: { authorization: `Bearer ${config.accessToken}` },
+        })
+        if (!response.ok) {
+          return providerFailure(
+            'provider_error',
+            `Media download failed (HTTP ${response.status}).`,
+            response.status === 429 || response.status >= 500,
+          )
+        }
+        const blob = await response.blob()
+        if (typeof value.file_size === 'number' && blob.size !== value.file_size) {
+          return providerFailure('invalid_input', 'Downloaded media size did not match metadata.')
+        }
+        return providerOk(blob)
+      } catch {
+        return providerFailure('timeout', 'Could not download the voice message.', true)
+      }
     },
   }
 }

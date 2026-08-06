@@ -51,6 +51,10 @@ export interface UserSettings {
 
   // --- cost ----------------------------------------------------------------
   annualCostThresholdUsd: number
+  voiceMessagesPerDay: number
+  transcriptionConfidenceThreshold: number
+  failedAudioRetentionHours: number
+  retainFailedTranscripts: boolean
 }
 
 export const DEFAULT_SETTINGS: UserSettings = {
@@ -82,6 +86,10 @@ export const DEFAULT_SETTINGS: UserSettings = {
   reminderMaxAttempts: 3,
 
   annualCostThresholdUsd: 50,
+  voiceMessagesPerDay: 20,
+  transcriptionConfidenceThreshold: 0.65,
+  failedAudioRetentionHours: 24,
+  retainFailedTranscripts: false,
 }
 
 export function settingsFromProfile(profile: Profile): UserSettings {
@@ -114,6 +122,10 @@ export function settingsFromProfile(profile: Profile): UserSettings {
     reminderMaxAttempts: profile.reminderMaxAttempts,
 
     annualCostThresholdUsd: profile.annualCostThresholdUsd,
+    voiceMessagesPerDay: profile.voiceMessagesPerDay,
+    transcriptionConfidenceThreshold: profile.transcriptionConfidenceThreshold,
+    failedAudioRetentionHours: profile.failedAudioRetentionHours,
+    retainFailedTranscripts: profile.retainFailedTranscripts,
   }
 }
 
@@ -164,6 +176,15 @@ export function validateSettings(
   ) {
     errors.newLeadSameDayCutoffHour = 'Between 0 and 23'
     settings.newLeadSameDayCutoffHour = previous.newLeadSameDayCutoffHour
+  }
+
+  if (!Number.isInteger(candidate.voiceMessagesPerDay) || candidate.voiceMessagesPerDay < 0 || candidate.voiceMessagesPerDay > 100) {
+    errors.voiceMessagesPerDay = 'Between 0 and 100 messages'
+    settings.voiceMessagesPerDay = previous.voiceMessagesPerDay
+  }
+  if (candidate.transcriptionConfidenceThreshold < 0 || candidate.transcriptionConfidenceThreshold > 1) {
+    errors.transcriptionConfidenceThreshold = 'Between 0 and 1'
+    settings.transcriptionConfidenceThreshold = previous.transcriptionConfidenceThreshold
   }
 
   if (

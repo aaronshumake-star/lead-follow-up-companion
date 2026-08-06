@@ -45,6 +45,7 @@ import {
   toStoredMatchCandidate,
   toUsageEvent,
   toVehicleInterest,
+  toVoiceRecord,
 } from './mappers.ts'
 import type { ApplyImportInput, ImportOutcome, ResolveReviewInput } from '../workspace.ts'
 import type { ScreenshotExtractionField, UsageEventKind } from '../../domain/models.ts'
@@ -90,6 +91,7 @@ export class SupabaseRepository implements Repository {
       notifications,
       clarificationSessions,
       usageEvents,
+      voiceRecords,
     ] = await Promise.all([
       this.loadProfile(),
       this.selectAll('customers', 'updated_at'),
@@ -104,6 +106,7 @@ export class SupabaseRepository implements Repository {
       this.selectAll('notification_log', 'created_at', 500),
       this.selectAll('clarification_sessions', 'created_at', 50),
       this.selectAll('usage_events', 'occurred_at', 2000),
+      this.selectAll('voice_processing_records', 'created_at', 500),
     ])
 
     return {
@@ -120,6 +123,7 @@ export class SupabaseRepository implements Repository {
       notifications: notifications.map(toNotification),
       clarificationSessions: clarificationSessions.map(toClarificationSession),
       usageEvents: usageEvents.map(toUsageEvent),
+      voiceRecords: voiceRecords.map(toVoiceRecord),
     }
   }
 
@@ -572,6 +576,10 @@ export class SupabaseRepository implements Repository {
           reminder_max_attempts: patch.reminderMaxAttempts,
 
           annual_cost_threshold_usd: patch.annualCostThresholdUsd,
+          voice_messages_per_day: patch.voiceMessagesPerDay,
+          transcription_confidence_threshold: patch.transcriptionConfidenceThreshold,
+          failed_audio_retention_hours: patch.failedAudioRetentionHours,
+          retain_failed_transcripts: patch.retainFailedTranscripts,
         }),
       )
       .eq('id', this.userId)
@@ -777,6 +785,28 @@ export class SupabaseRepository implements Repository {
     })
 
     unwrap(error, 'Could not record usage')
+  }
+
+  async deleteRetainedAudio(voiceRecordId: string): Promise<void> {
+    const { error } = await this.client
+      .from('voice_processing_records')
+      .delete()
+      .eq('id', voiceRecordId)
+    unwrap(error, 'Could not delete retained audio metadata')
+  }
+
+  async cleanupPrivateData(before: Date): Promise<number> {
+    const { data, error } = await this.client.rpc('delete_old_private_diagnostics', {
+      p_before: before.toISOString(),
+      p_delete_transcripts: true,
+    })
+    unwrap(error, 'Could not clean old private diagnostics')
+    return typeof data === 'number' ? data : 0
+  }
+
+  async deleteAllUserData(): Promise<void> {
+    const { error } = await this.client.rpc('delete_all_user_data')
+    unwrap(error, 'Could not delete all application data')
   }
 
   // -------------------------------------------------------------------------

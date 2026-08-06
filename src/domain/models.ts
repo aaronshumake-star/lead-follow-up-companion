@@ -200,6 +200,12 @@ export const USAGE_EVENT_KINDS = [
   'message_failed',
   'message_retry',
   'reminder_generated',
+  'voice_message_received',
+  'audio_minute_processed',
+  'transcription_request',
+  'transcription_failed',
+  'transcription_retry',
+  'audio_retained',
 ] as const
 export type UsageEventKind = (typeof USAGE_EVENT_KINDS)[number]
 
@@ -211,6 +217,37 @@ export interface UsageEvent {
   /** Zero for anything free, such as in-browser OCR. */
   estimatedCostUsd: number
   occurredAt: IsoTimestamp
+}
+
+export type VoiceProcessingStatus =
+  | 'received' | 'authorized' | 'media_fetching' | 'media_downloaded'
+  | 'transcribing' | 'transcribed' | 'parsing' | 'clarification_required'
+  | 'applied' | 'rejected' | 'failed' | 'deleted'
+
+export interface VoiceProcessingRecord {
+  id: string
+  customerId: string | null
+  providerMessageId: string
+  providerMediaIdHash: string | null
+  provider: string
+  transcriptionProvider: string | null
+  mimeType: string | null
+  actualSize: number | null
+  durationSeconds: number | null
+  detectedLanguage: string | null
+  transcriptPreview: string | null
+  transcriptConfidence: number | null
+  parsedIntent: string | null
+  status: VoiceProcessingStatus
+  failureClassification: string | null
+  failureSummary: string | null
+  attemptCount: number
+  nextAttemptAt: string | null
+  audioRetained: boolean
+  audioDeletedAt: string | null
+  simulated: boolean
+  createdAt: string
+  updatedAt: string
 }
 
 export interface InboundCommand {
@@ -307,6 +344,10 @@ export interface Profile {
   reminderMaxAttempts: number
 
   annualCostThresholdUsd: number
+  voiceMessagesPerDay: number
+  transcriptionConfidenceThreshold: number
+  failedAudioRetentionHours: number
+  retainFailedTranscripts: boolean
 }
 
 export type DateTimeDisplay = 'relative' | 'absolute' | 'both'

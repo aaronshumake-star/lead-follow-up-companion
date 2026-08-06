@@ -80,6 +80,7 @@ export function createSeedSnapshot(): WorkspaceSnapshot {
     notifications: structuredClone(DEMO_NOTIFICATIONS),
     clarificationSessions: structuredClone(DEMO_CLARIFICATION_SESSIONS),
     usageEvents: structuredClone(DEMO_USAGE_EVENTS),
+    voiceRecords: [],
   }
 }
 
@@ -119,6 +120,7 @@ export function readSnapshot(): WorkspaceSnapshot {
       notifications: parsed.notifications ?? [],
       clarificationSessions: parsed.clarificationSessions ?? [],
       usageEvents: parsed.usageEvents ?? [],
+      voiceRecords: parsed.voiceRecords ?? [],
     }
   } catch {
     const seeded = createSeedSnapshot()

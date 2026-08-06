@@ -12,6 +12,7 @@ import type { SimulatedDispatch, SimulatedInbound } from '../../data/workspace.t
 import { projectAnnualCost, COST_LEVERS } from '../../domain/messaging/cost.ts'
 import { formatRelative } from '../../lib/format.ts'
 import { DEMO_APPROVED_NUMBER } from '../../data/demo/import-runtime.ts'
+import { VoiceNotesSection } from './VoiceNotesSection.tsx'
 
 const EXAMPLE_COMMANDS = [
   'Called Jesus Ayala, no answer. Follow up tomorrow at ten.',
@@ -128,6 +129,8 @@ export function WhatsAppPage() {
           </p>
         </Card>
       )}
+
+      <VoiceNotesSection />
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <StatTile label="Messages Sent" value={projection.totals.messagesSent} />

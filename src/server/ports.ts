@@ -62,6 +62,18 @@ export interface ReminderStore {
 }
 
 export interface WebhookStore extends ReminderStore {
+  /** Atomic voice claim; null means duplicate/concurrent processing. */
+  claimVoice(input: {
+    userId: string
+    providerMessageId: string
+    providerMediaIdHash: string
+    mimeType: string
+    simulated: boolean
+  }): Promise<string | null>
+  updateVoice(
+    voiceRecordId: string,
+    patch: Record<string, unknown>,
+  ): Promise<void>
   /** False when this provider message id has already been handled. */
   registerInboundMessage(input: {
     userId: string | null
