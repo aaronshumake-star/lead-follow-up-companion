@@ -1,7 +1,7 @@
 import type { VoiceTranscriptionProvider } from '../providers/voice-transcription/types.ts'
 import type { WhatsAppProvider } from '../providers/whatsapp/types.ts'
 import { isApprovedSender } from '../providers/whatsapp/types.ts'
-import { hashSafeReference, validateAudio } from '../domain/voice/audio.ts'
+import { hashSafeReference, normalizeAudioMime, validateAudio } from '../domain/voice/audio.ts'
 import { handleInboundText } from './webhook-router.ts'
 import type { AccountContext, MessagingPort, WebhookStore } from './ports.ts'
 
@@ -32,11 +32,12 @@ export async function processVoiceMessage(
   }
 
   const hash = await hashSafeReference(message.providerMediaId)
+  const normalizedMimeType = normalizeAudioMime(message.mimeType)
   const voiceId = await store.claimVoice({
     userId: account.userId,
     providerMessageId: message.providerMessageId,
     providerMediaIdHash: hash,
-    mimeType: message.mimeType,
+    mimeType: normalizedMimeType,
     simulated: false,
   })
   if (voiceId === null) return { kind: 'duplicate' }
@@ -67,10 +68,15 @@ export async function processVoiceMessage(
   }
 
   const bytes = new Uint8Array(await media.value.arrayBuffer())
-  const validation = validateAudio(bytes, media.value.type || message.mimeType, message.durationSeconds, {
+  const validation = validateAudio(
+    bytes,
+    media.value.type || normalizedMimeType,
+    message.durationSeconds,
+    {
     maxBytes: limits.maxBytes,
     maxSeconds: limits.maxSeconds,
-  })
+    },
+  )
   if (!validation.ok) {
     await store.updateVoice(voiceId, {
       status: 'rejected',

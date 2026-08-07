@@ -69,6 +69,22 @@ describe('voice processing', () => {
     expect(store.appliedEffects).toHaveLength(1)
   })
 
+  it('normalizes Meta audio/ogg codec parameters before the database claim', async () => {
+    const store = new MemoryStore({
+      customers: [makeCustomer({ id: 'jesus', fullName: 'Jesus Ayala', leadStatus: 'working' })],
+    })
+    await processVoiceMessage(
+      store,
+      new MemoryMessaging(),
+      whatsapp(),
+      createSimulatedTranscriptionProvider({ transcript: 'What is overdue?', confidence: 0.96 }),
+      { userId: store.userId, settings: DEFAULT_SETTINGS, approvedNumberE164: APPROVED, remindersEnabled: true },
+      { ...args(APPROVED, 'voice-meta-mime'), mimeType: 'audio/ogg; codecs=opus' },
+      limits,
+    )
+    expect(store.voiceRecords[0]?.patch['mimeType']).toBe('audio/ogg')
+  })
+
   it('asks for clarification on low confidence and does not apply', async () => {
     const store = new MemoryStore({
       customers: [makeCustomer({ id: 'jesus', fullName: 'Jesus Ayala' })],

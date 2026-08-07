@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { validateAudio } from './audio.ts'
+import { normalizeAudioMime, validateAudio } from './audio.ts'
 import { createSimulatedTranscriptionProvider } from '../../providers/voice-transcription/simulated.ts'
 
 const ogg = new TextEncoder().encode('OggS' + 'x'.repeat(100))
@@ -8,6 +8,13 @@ const limits = { maxBytes: 1000, maxSeconds: 120 }
 describe('voice audio validation', () => {
   it('accepts a supported signed file', () => {
     expect(validateAudio(ogg, 'audio/ogg', 10, limits).ok).toBe(true)
+  })
+  it('accepts and normalizes Meta voice-note MIME parameters', () => {
+    expect(normalizeAudioMime('audio/ogg; codecs=opus')).toBe('audio/ogg')
+    expect(validateAudio(ogg, 'audio/ogg; codecs=opus', 10, limits)).toMatchObject({
+      ok: true,
+      mimeType: 'audio/ogg',
+    })
   })
   it('rejects unsupported, corrupt, oversized and overlong audio', () => {
     expect(validateAudio(ogg, 'audio/flac', 10, limits)).toMatchObject({ ok: false, classification: 'unsupported_media' })
