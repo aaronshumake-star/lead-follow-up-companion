@@ -13,25 +13,36 @@ export type AudioValidation =
   | { ok: true; mimeType: string; size: number; durationSeconds: number | null }
   | { ok: false; classification: 'unsupported_media' | 'oversized' | 'duration_exceeded' | 'corrupt_media'; message: string }
 
+/**
+ * Meta describes Opus voice notes as `audio/ogg; codecs=opus`. MIME parameters
+ * describe the codec, not a different media type, so validation and storage use
+ * the normalized base type. Lowercasing also avoids rejecting a semantically
+ * identical provider header because of casing.
+ */
+export function normalizeAudioMime(value: string): string {
+  return value.split(';', 1)[0]?.trim().toLowerCase() ?? ''
+}
+
 export function validateAudio(
   bytes: Uint8Array,
   declaredMime: string,
   declaredDuration: number | null,
   limits: AudioLimits,
 ): AudioValidation {
-  if (!SUPPORTED_AUDIO_MIME_TYPES.includes(declaredMime as (typeof SUPPORTED_AUDIO_MIME_TYPES)[number])) {
+  const mimeType = normalizeAudioMime(declaredMime)
+  if (!SUPPORTED_AUDIO_MIME_TYPES.includes(mimeType as (typeof SUPPORTED_AUDIO_MIME_TYPES)[number])) {
     return { ok: false, classification: 'unsupported_media', message: 'That voice format is not supported.' }
   }
   if (bytes.length > limits.maxBytes) {
     return { ok: false, classification: 'oversized', message: 'That voice message is too large.' }
   }
-  if (bytes.length === 0 || !hasPlausibleSignature(bytes, declaredMime)) {
+  if (bytes.length === 0 || !hasPlausibleSignature(bytes, mimeType)) {
     return { ok: false, classification: 'corrupt_media', message: 'That voice message is empty or corrupt.' }
   }
   if (declaredDuration !== null && declaredDuration > limits.maxSeconds) {
     return { ok: false, classification: 'duration_exceeded', message: 'That voice message is too long.' }
   }
-  return { ok: true, mimeType: declaredMime, size: bytes.length, durationSeconds: declaredDuration }
+  return { ok: true, mimeType, size: bytes.length, durationSeconds: declaredDuration }
 }
 
 function hasPlausibleSignature(bytes: Uint8Array, mime: string): boolean {
