@@ -10,7 +10,7 @@
 name = "lead-follow-up-companion-worker"
 main = "worker/index.ts"
 compatibility_date = "2026-08-01"
-workers_dev = false
+workers_dev = true
 
 [observability]
 enabled = true
