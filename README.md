@@ -529,6 +529,7 @@ first.
 | 3 ✅ | Screenshot OCR, automatic matching, reminders, WhatsApp text commands |
 | 4 ✅ | Voice notes, backup/recovery, privacy, diagnostics and hardening |
 
+
 ## License
 
 Private project. Not licensed for redistribution.
