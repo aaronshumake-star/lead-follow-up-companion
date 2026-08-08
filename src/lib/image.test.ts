@@ -6,8 +6,10 @@ import {
   validateImage,
 } from './image.ts'
 
-function jpegBytes(): Uint8Array {
-  const bytes = new Uint8Array(128)
+function jpegBytes(): Uint8Array<ArrayBuffer> {
+  // Explicit ArrayBuffer generic keeps the value assignable to BlobPart under
+  // TypeScript's stricter Uint8Array typing (ArrayBufferLike is not a BlobPart).
+  const bytes = new Uint8Array(new ArrayBuffer(128))
   bytes[0] = 0xff
   bytes[1] = 0xd8
   bytes[2] = 0xff
