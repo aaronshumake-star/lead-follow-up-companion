@@ -435,21 +435,9 @@ export function parseWhen(
 
   const time = parseTimeOfDay(text)
 
-  const inAmount = /\bin\s+(\d{1,3})\s*(minute|min|hour|hr|h|day|d|week|w)s?\b/i.exec(text)
-  if (inAmount !== null) {
-    const amount = Number.parseInt(inAmount[1] ?? '0', 10)
-    const unit = (inAmount[2] ?? '').toLowerCase()
-    const ms = unit.startsWith('min')
-      ? 60_000
-      : unit.startsWith('h')
-        ? 3_600_000
-        : unit.startsWith('d')
-          ? 86_400_000
-          : 604_800_000
-
-    return { dueAt: new Date(now.getTime() + amount * ms).toISOString(), timeAssumed: false }
-  }
-
+  // Calendar phrases first. "tomorrow at 8am" must resolve to 08:00 on the next
+  // calendar day — never to "exactly 24 hours from now" just because a relative
+  // duration also appears in the message.
   const morning = /\btomorrow morning\b/i.test(text)
   const afternoon = /\btomorrow afternoon\b/i.test(text)
 
@@ -487,6 +475,22 @@ export function parseWhen(
       dueAt: atZonedTime(now, zone, offset, time ?? settings.morningAt).toISOString(),
       timeAssumed: time === null,
     }
+  }
+
+  // Bare relative durations ("in 24 hours") stay exact offsets from now.
+  const inAmount = /\bin\s+(\d{1,3})\s*(minute|min|hour|hr|h|day|d|week|w)s?\b/i.exec(text)
+  if (inAmount !== null) {
+    const amount = Number.parseInt(inAmount[1] ?? '0', 10)
+    const unit = (inAmount[2] ?? '').toLowerCase()
+    const ms = unit.startsWith('min')
+      ? 60_000
+      : unit.startsWith('h')
+        ? 3_600_000
+        : unit.startsWith('d')
+          ? 86_400_000
+          : 604_800_000
+
+    return { dueAt: new Date(now.getTime() + amount * ms).toISOString(), timeAssumed: false }
   }
 
   // A bare time with no date means the next occurrence of that time.

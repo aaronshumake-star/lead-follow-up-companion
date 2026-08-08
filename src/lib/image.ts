@@ -11,6 +11,25 @@
 export const ALLOWED_MIME_TYPES = ['image/png', 'image/jpeg', 'image/webp'] as const
 export type AllowedMimeType = (typeof ALLOWED_MIME_TYPES)[number]
 
+/** Non-standard browser MIME labels that still mean a supported image. */
+const DECLARED_MIME_ALIASES: Record<string, AllowedMimeType> = {
+  'image/jpg': 'image/jpeg',
+  'image/pjpeg': 'image/jpeg',
+}
+
+/** Normalises a browser-declared MIME type before allow-list checks. */
+export function normalizeDeclaredMime(declared: string): string {
+  if (declared === '') return ''
+  const lowered = declared.toLowerCase().trim()
+  return DECLARED_MIME_ALIASES[lowered] ?? lowered
+}
+
+/** True when a declared MIME is empty (unknown) or an allowed image type. */
+export function isAllowedDeclaredMime(declared: string): boolean {
+  const normalized = normalizeDeclaredMime(declared)
+  return normalized === '' || ALLOWED_MIME_TYPES.includes(normalized as AllowedMimeType)
+}
+
 /** Matches the screenshots_byte_size_range check constraint. */
 export const MAX_IMAGE_BYTES = 10 * 1024 * 1024
 export const MIN_IMAGE_BYTES = 64
@@ -98,7 +117,10 @@ export async function hashImageBytes(bytes: ArrayBuffer): Promise<string> {
     throw new Error('This browser cannot hash images, so duplicate detection is unavailable.')
   }
 
-  const digest = await subtle.digest('SHA-256', bytes)
+  // Copy into a Uint8Array so SubtleCrypto always receives a view it accepts —
+  // some runtimes hand back an ArrayBuffer subclass from blob.arrayBuffer()
+  // that digest() rejects, which aborted screenshot intake before OCR.
+  const digest = await subtle.digest('SHA-256', new Uint8Array(bytes))
 
   return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('')
 }
@@ -132,7 +154,8 @@ export async function validateImage(blob: Blob, options: ValidateOptions = {}): 
     }
   }
 
-  const declared = blob.type
+  // Some browsers still declare JPEG as image/jpg; normalise before refusing.
+  const declared = normalizeDeclaredMime(blob.type)
   if (declared !== '' && !ALLOWED_MIME_TYPES.includes(declared as AllowedMimeType)) {
     return {
       ok: false,

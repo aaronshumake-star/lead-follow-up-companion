@@ -80,6 +80,9 @@ export function useScreenshotIntake(options: { scenarioId?: string | null } = {}
 
   const process = useCallback(
     async (blob: Blob, filename: string | null): Promise<void> => {
+      // A new paste/drop replaces any in-flight job so a second image cannot
+      // race the first and leave the UI looking like nothing happened.
+      cancelRef.current?.abort()
       const controller = new AbortController()
       cancelRef.current = controller
 

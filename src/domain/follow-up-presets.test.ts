@@ -77,41 +77,46 @@ describe('resolvePreset', () => {
 })
 
 describe('suggestFollowUp', () => {
-  it('suggests tomorrow after a call that went unanswered', () => {
+  it('suggests tomorrow morning on the next calendar day after no answer', () => {
     const suggestion = suggestFollowUp('outbound_call', 'no_answer', SETTINGS, NOW)
+    const expected = resolvePreset('tomorrow_morning', SETTINGS, NOW)
 
-    expect(suggestion?.dueAt.getTime()).toBe(NOW.getTime() + SETTINGS.noAnswerFollowUpHours * 3_600_000)
+    expect(suggestion?.dueAt.getTime()).toBe(expected?.getTime())
+    expect(suggestion?.dueAt.getTime()).not.toBe(NOW.getTime() + 24 * 3_600_000)
     expect(suggestion?.recommendedMethod).toBe('phone_call')
+
+    const parts = zonedPartsOf(suggestion!.dueAt, SETTINGS.timeZone)
+    expect(parts.day).toBe(6)
+    expect(parts.hour).toBe(9)
   })
 
-  it('suggests two days after leaving a voicemail', () => {
+  it('suggests two calendar days after leaving a voicemail', () => {
     const suggestion = suggestFollowUp('voicemail_left', 'left_voicemail', SETTINGS, NOW)
+    const expected = resolvePreset('in_two_days', SETTINGS, NOW)
 
-    expect(suggestion?.dueAt.getTime()).toBe(
-      NOW.getTime() + SETTINGS.voicemailFollowUpHours * 3_600_000,
-    )
+    expect(suggestion?.dueAt.getTime()).toBe(expected?.getTime())
   })
 
-  it('suggests tomorrow after a text with no reply', () => {
+  it('suggests tomorrow morning after a text with no reply', () => {
     const suggestion = suggestFollowUp('outbound_text', 'no_reply', SETTINGS, NOW)
+    const expected = resolvePreset('tomorrow_morning', SETTINGS, NOW)
 
-    expect(suggestion?.dueAt.getTime()).toBe(
-      NOW.getTime() + SETTINGS.textNoReplyFollowUpHours * 3_600_000,
-    )
+    expect(suggestion?.dueAt.getTime()).toBe(expected?.getTime())
   })
 
-  it('suggests two days after an email with no reply', () => {
+  it('suggests two calendar days after an email with no reply', () => {
     const suggestion = suggestFollowUp('outbound_email', 'no_reply', SETTINGS, NOW)
+    const expected = resolvePreset('in_two_days', SETTINGS, NOW)
 
-    expect(suggestion?.dueAt.getTime()).toBe(
-      NOW.getTime() + SETTINGS.emailNoReplyFollowUpHours * 3_600_000,
-    )
+    expect(suggestion?.dueAt.getTime()).toBe(expected?.getTime())
   })
 
   it('suggests an appointment reminder when an appointment is set', () => {
     const suggestion = suggestFollowUp('outbound_call', 'appointment_set', SETTINGS, NOW)
 
     expect(suggestion?.preset).toBe('appointment')
+    // Appointment lead time stays a relative offset, not a calendar preset.
+    expect(suggestion?.dueAt.getTime()).toBe(NOW.getTime() + 24 * 3_600_000)
   })
 
   it('suggests nothing once the outcome closes the lead', () => {
@@ -119,11 +124,21 @@ describe('suggestFollowUp', () => {
     expect(suggestFollowUp('outbound_call', 'not_interested', SETTINGS, NOW)).toBeNull()
   })
 
-  it('uses the configured interval rather than a hard-coded one', () => {
+  it('keeps sub-day intervals relative rather than snapping to tomorrow morning', () => {
     const fast = { ...SETTINGS, noAnswerFollowUpHours: 4 }
     const suggestion = suggestFollowUp('outbound_call', 'no_answer', fast, NOW)
 
     expect(suggestion?.dueAt.getTime()).toBe(NOW.getTime() + 4 * 3_600_000)
+  })
+
+  it('honours a custom morning time for day-aligned no-answer follow-ups', () => {
+    const custom = { ...SETTINGS, morningAt: '08:00' }
+    const suggestion = suggestFollowUp('outbound_call', 'no_answer', custom, NOW)
+    const parts = zonedPartsOf(suggestion!.dueAt, custom.timeZone)
+
+    expect(parts.day).toBe(6)
+    expect(parts.hour).toBe(8)
+    expect(parts.minute).toBe(0)
   })
 })
 
