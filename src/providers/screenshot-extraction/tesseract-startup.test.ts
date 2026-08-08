@@ -28,6 +28,54 @@ describe('createTesseractExtractionProvider startup failures', () => {
     vi.resetModules()
   })
 
+  it('maps a string image-read rejection to the OCR read error', async () => {
+    vi.resetModules()
+    vi.doMock('tesseract.js', () => ({
+      recognize: vi.fn(async () => {
+        return Promise.reject('Error: Error attempting to read image.')
+      }),
+    }))
+
+    const { createTesseractExtractionProvider: createFresh } = await import('./tesseract.ts')
+    const provider = createFresh()
+    const result = await provider.extract({
+      image: new Blob([new Uint8Array([0xff, 0xd8, 0xff, 0xd9])], { type: 'image/jpeg' }),
+      fileHash: 'b'.repeat(64),
+    })
+
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.error.message).toBe('The OCR engine could not read that image.')
+    }
+
+    vi.doUnmock('tesseract.js')
+    vi.resetModules()
+  })
+
+  it('maps an Error image-read rejection to the OCR read error', async () => {
+    vi.resetModules()
+    vi.doMock('tesseract.js', () => ({
+      recognize: vi.fn(async () => {
+        return Promise.reject(new Error('Error attempting to read image.'))
+      }),
+    }))
+
+    const { createTesseractExtractionProvider: createFresh } = await import('./tesseract.ts')
+    const provider = createFresh()
+    const result = await provider.extract({
+      image: new Blob([new Uint8Array([0xff, 0xd8, 0xff, 0xd9])], { type: 'image/jpeg' }),
+      fileHash: 'c'.repeat(64),
+    })
+
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.error.message).toBe('The OCR engine could not read that image.')
+    }
+
+    vi.doUnmock('tesseract.js')
+    vi.resetModules()
+  })
+
   it('keeps the createTesseractExtractionProvider export wired for production mode', () => {
     const provider = createTesseractExtractionProvider()
     expect(provider.info.id).toBe('tesseract')

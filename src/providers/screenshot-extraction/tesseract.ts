@@ -76,9 +76,17 @@ export function createTesseractExtractionProvider(
       } catch (cause) {
         // A failed OCR run is an ordinary outcome of pointing a camera at a
         // spreadsheet, so it degrades into a result rather than an exception.
+        // tesseract.js often rejects with a bare string (worker.onerror message
+        // or "Error: Error attempting to read image."), not an Error instance.
+        const rawMessage =
+          cause instanceof Error
+            ? cause.message
+            : typeof cause === 'string'
+              ? cause
+              : ''
         return providerFailure<ScreenshotExtractionResult>(
           'provider_error',
-          cause instanceof Error && cause.message !== ''
+          /read image/i.test(rawMessage)
             ? 'The OCR engine could not read that image.'
             : 'The OCR engine failed to start.',
           true,
