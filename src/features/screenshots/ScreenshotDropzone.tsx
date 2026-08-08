@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type DragEvent } from 'react'
 import { Button } from '../../components/ui/Button.tsx'
 import { cn } from '../../lib/cn.ts'
-import { ALLOWED_MIME_TYPES } from '../../lib/image.ts'
+import { ALLOWED_MIME_TYPES, isAllowedDeclaredMime } from '../../lib/image.ts'
 import type { IntakeState } from './useScreenshotIntake.ts'
 
 const STAGE_LABELS: Record<IntakeState['stage'], string> = {
@@ -14,6 +14,50 @@ const STAGE_LABELS: Record<IntakeState['stage'], string> = {
   done: 'Done',
   error: 'Failed',
   cancelled: 'Cancelled',
+}
+
+const FILE_ACCEPT = [...ALLOWED_MIME_TYPES, 'image/jpg', 'image/*'].join(',')
+
+/**
+ * Pulls image files from a FileList and/or DataTransferItemList.
+ *
+ * Some browsers put a dropped screenshot in `items` while leaving `files`
+ * empty (or the reverse). Checking both is what stops a single-image drop
+ * from silently doing nothing.
+ */
+function collectImageFiles(files: FileList | null | undefined, items?: DataTransferItemList | null): File[] {
+  const collected: File[] = []
+  const seen = new Set<string>()
+
+  const push = (file: File | null | undefined) => {
+    if (file === null || file === undefined) return
+    // Empty MIME is allowed through — validateImage sniffs the bytes next.
+    if (!isAllowedDeclaredMime(file.type) && !looksLikeImageFilename(file.name)) return
+    const key = `${file.name}:${file.size}:${file.lastModified}`
+    if (seen.has(key)) return
+    seen.add(key)
+    collected.push(file)
+  }
+
+  if (files !== null && files !== undefined) {
+    for (let index = 0; index < files.length; index += 1) {
+      push(files.item(index))
+    }
+  }
+
+  if (items !== null && items !== undefined) {
+    for (let index = 0; index < items.length; index += 1) {
+      const item = items[index]
+      if (item === undefined || item.kind !== 'file') continue
+      push(item.getAsFile())
+    }
+  }
+
+  return collected
+}
+
+function looksLikeImageFilename(name: string): boolean {
+  return /\.(png|jpe?g|webp)$/i.test(name)
 }
 
 /**
@@ -35,6 +79,8 @@ export function ScreenshotDropzone({
   onReset: () => void
 }) {
   const [dragging, setDragging] = useState(false)
+  const [localError, setLocalError] = useState<string | null>(null)
+  const [localNotice, setLocalNotice] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
   const busy =
@@ -43,43 +89,69 @@ export function ScreenshotDropzone({
     state.stage !== 'error' &&
     state.stage !== 'cancelled'
 
-  const handleFile = useCallback(
-    (file: File | Blob | null, name: string | null) => {
-      if (file === null) return
-      onFile(file, name)
+  const submitFiles = useCallback(
+    (files: File[]) => {
+      if (files.length === 0) {
+        setLocalNotice(null)
+        setLocalError('No image was found. Choose a PNG, JPEG or WEBP screenshot.')
+        return
+      }
+
+      const first = files[0]
+      if (first === undefined) {
+        setLocalNotice(null)
+        setLocalError('No image was found. Choose a PNG, JPEG or WEBP screenshot.')
+        return
+      }
+
+      // One image enters the OCR path per submission. Extra selected files are
+      // left for a follow-up choose/drop so an in-flight read is never replaced
+      // mid-way — multi-image workflows still work one capture at a time.
+      setLocalError(null)
+      setLocalNotice(
+        files.length > 1
+          ? `Processing the first image (${first.name || 'screenshot'}). Choose or drop the next image when this finishes.`
+          : null,
+      )
+      onFile(first, first.name === '' ? null : first.name)
     },
     [onFile],
   )
 
   useEffect(() => {
     function onPaste(event: ClipboardEvent) {
-      const items = event.clipboardData?.items
-      if (items === undefined) return
-
-      for (const item of items) {
-        if (item.kind !== 'file') continue
-
-        const file = item.getAsFile()
-        if (file === null) continue
-        if (!ALLOWED_MIME_TYPES.includes(file.type as (typeof ALLOWED_MIME_TYPES)[number])) continue
-
-        event.preventDefault()
-        handleFile(file, file.name === '' ? 'pasted-screenshot.png' : file.name)
+      const files = collectImageFiles(event.clipboardData?.files, event.clipboardData?.items)
+      if (files.length === 0) {
+        // A paste with no image at all is ordinary text — leave it alone.
+        const hasFileItem = [...(event.clipboardData?.items ?? [])].some((item) => item.kind === 'file')
+        if (hasFileItem) {
+          event.preventDefault()
+          setLocalNotice(null)
+          setLocalError('That paste was not a PNG, JPEG or WEBP image.')
+        }
         return
       }
+
+      event.preventDefault()
+      const named = files.map((file) =>
+        file.name === '' ? new File([file], 'pasted-screenshot.png', { type: file.type }) : file,
+      )
+      submitFiles(named)
     }
 
     document.addEventListener('paste', onPaste)
     return () => document.removeEventListener('paste', onPaste)
-  }, [handleFile])
+  }, [submitFiles])
 
   function onDrop(event: DragEvent<HTMLDivElement>) {
     event.preventDefault()
     setDragging(false)
-
-    const file = event.dataTransfer.files.item(0)
-    handleFile(file, file?.name ?? null)
+    submitFiles(collectImageFiles(event.dataTransfer.files, event.dataTransfer.items))
   }
+
+  const displayError = localError ?? state.error
+  const showStatus =
+    state.previewUrl !== null || busy || displayError !== null || localNotice !== null
 
   return (
     <div
@@ -115,7 +187,14 @@ export function ScreenshotDropzone({
             </Button>
           )}
           {(state.stage === 'done' || state.stage === 'error' || state.stage === 'cancelled') && (
-            <Button variant="ghost" onClick={onReset}>
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setLocalError(null)
+                setLocalNotice(null)
+                onReset()
+              }}
+            >
               Clear
             </Button>
           )}
@@ -124,18 +203,18 @@ export function ScreenshotDropzone({
         <input
           ref={inputRef}
           type="file"
-          accept={ALLOWED_MIME_TYPES.join(',')}
+          accept={FILE_ACCEPT}
+          multiple
           className="sr-only"
           aria-label="Choose a screenshot file"
           onChange={(event) => {
-            const file = event.target.files?.item(0) ?? null
-            handleFile(file, file?.name ?? null)
+            submitFiles(collectImageFiles(event.target.files))
             event.target.value = ''
           }}
         />
       </div>
 
-      {(state.previewUrl !== null || busy) && (
+      {showStatus && (
         <div className="mt-4 flex flex-wrap items-start gap-4 border-t border-slate-800 pt-4">
           {state.previewUrl !== null && (
             <img
@@ -169,9 +248,15 @@ export function ScreenshotDropzone({
               </div>
             )}
 
-            {state.error !== null && (
+            {localNotice !== null && displayError === null && (
+              <p className="mt-2 text-sm text-slate-400" role="status">
+                {localNotice}
+              </p>
+            )}
+
+            {displayError !== null && (
               <p role="alert" className="mt-2 text-sm text-rose-300">
-                {state.error}
+                {displayError}
               </p>
             )}
           </div>

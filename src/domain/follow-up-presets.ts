@@ -116,6 +116,19 @@ export function suggestFollowUp(
 ): FollowUpSuggestion | null {
   const inHours = (hours: number): Date => new Date(now.getTime() + hours * 3_600_000)
 
+  /**
+   * Day-aligned intervals ("24 hours", "48 hours") mean a wall-clock time on a
+   * future calendar day — tomorrow at morningAt — not exactly N hours from now.
+   * Sub-day intervals stay relative so "in 4 hours" still means in 4 hours.
+   */
+  const dueForPreset = (preset: FollowUpPreset, hours: number): Date => {
+    if (hours % 24 === 0 && hours >= 24) {
+      const resolved = resolvePreset(preset, settings, now)
+      if (resolved !== null) return resolved
+    }
+    return inHours(hours)
+  }
+
   // An appointment being set is its own next action, so no chasing follow-up.
   if (outcome === 'appointment_set' || activityType === 'appointment') {
     return {
@@ -133,7 +146,7 @@ export function suggestFollowUp(
   if (activityType === 'outbound_call' && outcome === 'no_answer') {
     return {
       preset: 'tomorrow_morning',
-      dueAt: inHours(settings.noAnswerFollowUpHours),
+      dueAt: dueForPreset('tomorrow_morning', settings.noAnswerFollowUpHours),
       reason: 'Retry the call after no answer',
       recommendedMethod: 'phone_call',
       isWaiting: false,
@@ -143,7 +156,7 @@ export function suggestFollowUp(
   if (activityType === 'voicemail_left' || outcome === 'left_voicemail') {
     return {
       preset: 'in_two_days',
-      dueAt: inHours(settings.voicemailFollowUpHours),
+      dueAt: dueForPreset('in_two_days', settings.voicemailFollowUpHours),
       reason: 'Follow up on the voicemail',
       recommendedMethod: 'phone_call',
       isWaiting: false,
@@ -153,7 +166,7 @@ export function suggestFollowUp(
   if (activityType === 'outbound_text') {
     return {
       preset: 'tomorrow_morning',
-      dueAt: inHours(settings.textNoReplyFollowUpHours),
+      dueAt: dueForPreset('tomorrow_morning', settings.textNoReplyFollowUpHours),
       reason: 'Follow up if the text goes unanswered',
       recommendedMethod: 'phone_call',
       isWaiting: false,
@@ -163,7 +176,7 @@ export function suggestFollowUp(
   if (activityType === 'outbound_email') {
     return {
       preset: 'in_two_days',
-      dueAt: inHours(settings.emailNoReplyFollowUpHours),
+      dueAt: dueForPreset('in_two_days', settings.emailNoReplyFollowUpHours),
       reason: 'Follow up if the email goes unanswered',
       recommendedMethod: 'phone_call',
       isWaiting: false,
@@ -174,7 +187,7 @@ export function suggestFollowUp(
   if (outcome === 'connected' || outcome === 'replied') {
     return {
       preset: 'tomorrow_morning',
-      dueAt: inHours(settings.quoteSentFollowUpHours),
+      dueAt: dueForPreset('tomorrow_morning', settings.quoteSentFollowUpHours),
       reason: 'Continue the conversation',
       recommendedMethod: null,
       isWaiting: false,
@@ -184,7 +197,7 @@ export function suggestFollowUp(
   if (outcome === 'no_reply') {
     return {
       preset: 'tomorrow_morning',
-      dueAt: inHours(settings.textNoReplyFollowUpHours),
+      dueAt: dueForPreset('tomorrow_morning', settings.textNoReplyFollowUpHours),
       reason: 'No reply yet',
       recommendedMethod: 'phone_call',
       isWaiting: false,
